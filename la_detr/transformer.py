@@ -16,6 +16,7 @@ from torch import nn, Tensor
 import math
 import numpy as np
 from .attention import MultiheadAttention
+from typing import List
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -67,6 +68,7 @@ class Transformer(nn.Module):
                  bbox_embed_diff_each_layer=False,
                  m_classes=None, tgt_embed=False,
                  class_anchor=False,
+                 num_moe=0, num_moe_topk=0,
                  ):
         super().__init__()
 
@@ -84,7 +86,8 @@ class Transformer(nn.Module):
 
         # TransformerDecoderLayerThin
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
-                                                dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
+                                                dropout, activation, normalize_before, keep_query_pos=keep_query_pos,
+                                                num_moe=num_moe, num_moe_topk=num_moe_topk)
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec,
@@ -556,11 +559,44 @@ class TransformerEncoderLayer(nn.Module):
         return self.forward_post(src, src_mask, src_key_padding_mask, pos)
 
 
+class FeedForward(nn.Module):
+    def __init__(self, d_model, dim_feedforward, activation, dropout):
+        super().__init__()
+
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.activation = _get_activation_fn(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear2(self.dropout(self.activation(self.linear1(x))))
+
+class MoeLayer(nn.Module):
+    def __init__(self, experts: List[nn.Module], gate: nn.Module, num_moe_topk):
+        super().__init__()
+        assert len(experts) > 0
+        self.experts = nn.ModuleList(experts)
+        self.gate = gate
+        self.num_experts_per_tok = num_moe_topk
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        gate_logits = self.gate(inputs)
+        weights, selected_experts = torch.topk(
+            gate_logits, self.num_experts_per_tok
+        )
+        weights = F.softmax(weights, dim=1, dtype=torch.float).to(inputs.dtype)
+        results = torch.zeros_like(inputs)
+        for i, expert in enumerate(self.experts):
+            for q, selected_expert in enumerate(selected_experts):
+                batch_idx, nth_expert = torch.where(selected_expert == i)
+                results[q, batch_idx] += weights[q, batch_idx, nth_expert, None] * expert(inputs[q, batch_idx])
+        return results
+
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False, keep_query_pos=False,
-                 rm_self_attn_decoder=False):
+                 rm_self_attn_decoder=False, num_moe=0, num_moe_topk=0):
         super().__init__()
         # Decoder Self-Attention
         if not rm_self_attn_decoder:
@@ -587,16 +623,25 @@ class TransformerDecoderLayer(nn.Module):
         self.rm_self_attn_decoder = rm_self_attn_decoder
 
         # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        # self.linear1 = nn.Linear(d_model, dim_feedforward)
+        # self.dropout = nn.Dropout(dropout)
+        # self.linear2 = nn.Linear(dim_feedforward, d_model)
+        # self.activation = _get_activation_fn(activation)
+
+        if num_moe > 0:
+            self.ffn = MoeLayer(
+                experts=[FeedForward(d_model, dim_feedforward, activation, dropout) for _ in range(num_moe)],
+                gate=nn.Linear(d_model, num_moe, bias=False),
+                num_moe_topk=num_moe_topk,
+            )
+        else:
+            self.ffn = FeedForward(d_model, dim_feedforward, activation, dropout)
 
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
 
-        self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
         self.keep_query_pos = keep_query_pos
 
@@ -674,7 +719,8 @@ class TransformerDecoderLayer(nn.Module):
 
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        # tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        tgt2 = self.ffn(tgt)
         tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
         return tgt
@@ -802,6 +848,8 @@ def build_transformer(args):
         tgt_embed=args.tgt_embed,
         num_queries=args.num_queries,
         class_anchor=args.class_anchor,
+        num_moe=args.num_moe,
+        num_moe_topk=args.num_moe_topk,
     )
 
 

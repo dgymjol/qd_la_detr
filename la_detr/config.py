@@ -90,7 +90,8 @@ class BaseOptions(object):
         parser.add_argument('--cls_both', action="store_true")
         parser.add_argument('--score_fg', action="store_true")
         parser.add_argument('--class_anchor', action="store_true")
-        
+        parser.add_argument('--num_moe', type=int, default=0)
+        parser.add_argument('--num_moe_topk', type=int, default=None)
         
         # * Transformer
         parser.add_argument('--enc_layers', default=2, type=int,
