@@ -37,7 +37,7 @@ fi
 #### training
 bsz=32
 
-gpunum=1
+gpunum=0
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
@@ -51,14 +51,15 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_4_1_1e-4" \
+--exp_id "naive_moe_4_1_1e-5" \
 --m_classes "[10, 30, 70, 150]" \
 --cc_matching \
 --num_moe 4 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}
+
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
@@ -72,13 +73,13 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_3_1_1e-4" \
+--exp_id "naive_moe_3_1_1e-5" \
 --m_classes "[10, 30, 150]" \
 --cc_matching \
 --num_moe 3 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -93,13 +94,13 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_3_1_1e-4" \
+--exp_id "naive_moe_3_1_1e-5" \
 --m_classes "[10, 70, 150]" \
 --cc_matching \
 --num_moe 3 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -114,13 +115,13 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_2_1_1e-4" \
+--exp_id "naive_moe_2_1_1e-5" \
 --m_classes "[30, 150]" \
 --cc_matching \
 --num_moe 2 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -135,13 +136,13 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_2_1_1e-4" \
+--exp_id "naive_moe_2_1_1e-5" \
 --m_classes "[10, 150]" \
 --cc_matching \
 --num_moe 2 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -156,11 +157,11 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "naive_moe_2_1_1e-4" \
+--exp_id "naive_moe_2_1_1e-5" \
 --m_classes "[70, 150]" \
 --cc_matching \
 --num_moe 2 \
 --num_moe_topk 1 \
 --num_queries 10 \
---lr 1e-4 \
+--lr 1e-5 \
 ${@:1}

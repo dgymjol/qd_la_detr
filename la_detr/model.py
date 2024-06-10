@@ -172,7 +172,7 @@ class QDDETR(nn.Module):
 
         video_length = src_vid.shape[1]
         
-        hs, reference, memory, memory_global = self.transformer(src, ~mask, self.query_embed.weight, pos, video_length=video_length)
+        hs, reference, memory, memory_global, selected_experts = self.transformer(src, ~mask, self.query_embed.weight, pos, video_length=video_length)
         outputs_class = self.class_embed(hs)  # (#layers, batch_size, #queries, #classes)
         reference_before_sigmoid = inverse_sigmoid(reference)
         tmp = self.span_embed(hs)
@@ -184,6 +184,8 @@ class QDDETR(nn.Module):
         if self.m_classes is not None and self.cls_both:
             outputs_aux_class = self.aux_class_embed(hs)
             out['aux_pred_logits'] = outputs_aux_class[-1]
+        if selected_experts is not None:
+            out['selected_expert'] = selected_experts[-1]
 
         txt_mem = memory[:, src_vid.shape[1]:]  # (bsz, L_txt, d)
         vid_mem = memory[:, :src_vid.shape[1]]  # (bsz, L_vid, d)
@@ -213,7 +215,7 @@ class QDDETR(nn.Module):
         src_neg = torch.cat([src_, src_neg], dim=1)
         pos_neg = pos.clone()  # since it does not use actual content
 
-        _, _, memory_neg, memory_global_neg = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg, video_length=video_length)
+        _, _, memory_neg, memory_global_neg, _ = self.transformer(src_neg, ~mask_neg, self.query_embed.weight, pos_neg, video_length=video_length)
         vid_mem_neg = memory_neg[:, :src_vid.shape[1]]
 
 
@@ -226,15 +228,25 @@ class QDDETR(nn.Module):
         if self.aux_loss:
             # assert proj_queries and proj_txt_mem
             if not self.cls_both:
-                out['aux_outputs'] = [
-                    {'pred_logits': a, 'pred_spans': b} for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+                if selected_experts is not None:
+                    out['aux_outputs'] = [
+                        {'pred_logits': a, 'pred_spans': b, 'selected_expert': c} for a, b, c in zip(outputs_class[:-1], outputs_coord[:-1], selected_experts[:-1])]              
+                else:
+                    out['aux_outputs'] = [
+                        {'pred_logits': a, 'pred_spans': b} for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]              
             else:
-                out['aux_outputs'] = [
-                    {'pred_logits': a, 'aux_pred_logits' : b, 'pred_spans': c} for a, b, c in zip(outputs_class[:-1], outputs_aux_class[:-1], outputs_coord[:-1])]
+                if selected_experts is not None:
+                    out['aux_outputs'] = [
+                        {'pred_logits': a, 'aux_pred_logits' : b, 'pred_spans': c, 'selected_expert': d} 
+                        for a, b, c, d in zip(outputs_class[:-1], outputs_aux_class[:-1], outputs_coord[:-1], selected_experts[:-1])]
+                else:
+                    out['aux_outputs'] = [
+                        {'pred_logits': a, 'aux_pred_logits' : b, 'pred_spans': c} for a, b, c in zip(outputs_class[:-1], outputs_aux_class[:-1], outputs_coord[:-1])]
             if self.contrastive_align_loss:
                 assert proj_queries is not None
                 for idx, d in enumerate(proj_queries[:-1]):
                     out['aux_outputs'][idx].update(dict(proj_queries=d, proj_txt_mem=proj_txt_mem))
+
         return out
 
     # @torch.jit.unused
@@ -348,6 +360,8 @@ class SetCriterion(nn.Module):
         src_logits = outputs['pred_logits']  # (batch_size, #queries, #classes=2)
         # idx is a tuple of two 1D tensors (batch_idx, src_idx), of the same length == #objects in batch
         idx = self._get_src_permutation_idx(indices)
+        if len(idx) == 0:
+            print("error")
 
         target_classes = torch.full(src_logits.shape[:2], self.background_label,
                                     dtype=torch.int64, device=src_logits.device)  # (batch_size, #queries)
@@ -374,11 +388,11 @@ class SetCriterion(nn.Module):
 
         losses = {'loss_label': loss.mean()}
 
-        if log:
-            # TODO this should probably be a separate loss, not hacked in this one here
-            losses['class_error'] = 100 - accuracy(src_logits[idx], self.foreground_label)[0]
-            if self.m_classes is not None and self.cls_both:
-                losses['aux_class_error'] = 100 - accuracy(aux_src_logits[idx], self.foreground_label)[0]
+        # if log:
+        #     # TODO this should probably be a separate loss, not hacked in this one here
+        #     losses['class_error'] = 100 - accuracy(src_logits[idx], self.foreground_label)[0]
+        #     if self.m_classes is not None and self.cls_both:
+        #         losses['aux_class_error'] = 100 - accuracy(aux_src_logits[idx], self.foreground_label)[0]
         return losses
 
     def loss_saliency(self, outputs, targets, indices, log=True):

@@ -93,7 +93,7 @@ class Transformer(nn.Module):
                                           return_intermediate=return_intermediate_dec,
                                           d_model=d_model, query_dim=query_dim, keep_query_pos=keep_query_pos, query_scale_type=query_scale_type,
                                           modulate_t_attn=modulate_t_attn,
-                                          bbox_embed_diff_each_layer=bbox_embed_diff_each_layer)
+                                          bbox_embed_diff_each_layer=bbox_embed_diff_each_layer, num_moe=num_moe)
 
         self._reset_parameters()
 
@@ -160,12 +160,12 @@ class Transformer(nn.Module):
         else:
             tgt = torch.zeros(refpoint_embed.shape[0], bs, d).cuda()
         
-        hs, references = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
+        hs, references, selected_experts = self.decoder(tgt, memory_local, memory_key_padding_mask=mask_local,
                           pos=pos_embed_local, refpoints_unsigmoid=refpoint_embed)  # (#layers, #queries, batch_size, d)
         # hs = hs.transpose(1, 2)  # (#layers, batch_size, #qeries, d)
         # memory = memory.permute(1, 2, 0)  # (batch_size, d, L)
         memory_local = memory_local.transpose(0, 1)  # (batch_size, L, d)
-        return hs, references, memory_local, memory_global
+        return hs, references, memory_local, memory_global, selected_experts
 
 
 class TransformerEncoder(nn.Module):
@@ -207,7 +207,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False,
                  d_model=256, query_dim=2, keep_query_pos=False, query_scale_type='cond_elewise',
                  modulate_t_attn=False,
-                 bbox_embed_diff_each_layer=False,
+                 bbox_embed_diff_each_layer=False, num_moe=0,
                  ):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)
@@ -254,6 +254,8 @@ class TransformerDecoder(nn.Module):
         if not keep_query_pos:
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None
+
+        self.num_moe = num_moe
         
     def forward(self, tgt, memory,
                 tgt_mask: Optional[Tensor] = None,
@@ -268,7 +270,7 @@ class TransformerDecoder(nn.Module):
         intermediate = []
         reference_points = refpoints_unsigmoid.sigmoid()
         ref_points = [reference_points]
-
+        selected_experts = []
         # import ipdb; ipdb.set_trace()
 
         for layer_id, layer in enumerate(self.layers):
@@ -301,7 +303,7 @@ class TransformerDecoder(nn.Module):
                 query_sine_embed *= (reft_cond[..., 0] / obj_center[..., 1]).unsqueeze(-1)
 
 
-            output = layer(output, memory, tgt_mask=tgt_mask,
+            output, selected_expert = layer(output, memory, tgt_mask=tgt_mask,
                            memory_mask=memory_mask,
                            tgt_key_padding_mask=tgt_key_padding_mask,
                            memory_key_padding_mask=memory_key_padding_mask,
@@ -323,6 +325,7 @@ class TransformerDecoder(nn.Module):
 
             if self.return_intermediate:
                 intermediate.append(self.norm(output))
+            selected_experts.append(selected_expert)
 
         if self.norm is not None:
             output = self.norm(output)
@@ -335,11 +338,13 @@ class TransformerDecoder(nn.Module):
                 return [
                     torch.stack(intermediate).transpose(1, 2),
                     torch.stack(ref_points).transpose(1, 2),
+                    torch.stack(selected_experts).transpose(1, 2)
                 ]
             else:
                 return [
                     torch.stack(intermediate).transpose(1, 2),
-                    reference_points.unsqueeze(0).transpose(1, 2)
+                    reference_points.unsqueeze(0).transpose(1, 2),
+                    torch.stack(selected_experts).transpose(1, 2)
                 ]
 
         return output.unsqueeze(0)
@@ -572,17 +577,16 @@ class FeedForward(nn.Module):
         return self.linear2(self.dropout(self.activation(self.linear1(x))))
 
 class MoeLayer(nn.Module):
-    def __init__(self, experts: List[nn.Module], gate: nn.Module, num_moe_topk):
+    def __init__(self, experts: List[nn.Module], gate: nn.Module):
         super().__init__()
         assert len(experts) > 0
         self.experts = nn.ModuleList(experts)
         self.gate = gate
-        self.num_experts_per_tok = num_moe_topk
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor, num_experts_per_tok) -> torch.Tensor:
         gate_logits = self.gate(inputs)
         weights, selected_experts = torch.topk(
-            gate_logits, self.num_experts_per_tok
+            gate_logits, num_experts_per_tok
         )
         weights = F.softmax(weights, dim=1, dtype=torch.float).to(inputs.dtype)
         results = torch.zeros_like(inputs)
@@ -590,7 +594,7 @@ class MoeLayer(nn.Module):
             for q, selected_expert in enumerate(selected_experts):
                 batch_idx, nth_expert = torch.where(selected_expert == i)
                 results[q, batch_idx] += weights[q, batch_idx, nth_expert, None] * expert(inputs[q, batch_idx])
-        return results
+        return results, selected_experts
 
 class TransformerDecoderLayer(nn.Module):
 
@@ -632,10 +636,11 @@ class TransformerDecoderLayer(nn.Module):
             self.ffn = MoeLayer(
                 experts=[FeedForward(d_model, dim_feedforward, activation, dropout) for _ in range(num_moe)],
                 gate=nn.Linear(d_model, num_moe, bias=False),
-                num_moe_topk=num_moe_topk,
             )
         else:
             self.ffn = FeedForward(d_model, dim_feedforward, activation, dropout)
+        self.num_moe = num_moe
+        self.num_moe_topk = num_moe_topk
 
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
@@ -720,10 +725,20 @@ class TransformerDecoderLayer(nn.Module):
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         # tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-        tgt2 = self.ffn(tgt)
+        if self.num_moe > 0 :
+            if is_first:
+                tgt2, selected_experts = self.ffn(tgt, self.num_moe_topk)
+            else:
+                tgt2, selected_experts = self.ffn(tgt, 1)
+
+        else:
+            tgt2 = self.fft(tgt)
+            selected_experts = None
+
         tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
-        return tgt
+
+        return tgt, selected_experts
 
 
 class TransformerDecoderLayerThin(nn.Module):

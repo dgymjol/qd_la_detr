@@ -150,6 +150,7 @@ class BaseOptions(object):
         parser.add_argument('--set_cost_class', default=4, type=float,
                             help="Class coefficient in the matching cost")
         parser.add_argument('--cc_matching', action="store_true")
+        parser.add_argument("--pos_query", type=float, default=1, help="learning rate")
 
         # * Loss coefficients
         parser.add_argument('--span_loss_coef', default=10, type=float)

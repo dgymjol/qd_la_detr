@@ -52,9 +52,9 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --bsz ${bsz} \
 --results_root ${results_root} \
 --exp_id "naive_moe_8_3" \
---m_classes "[10, 30, 70, 150]" \
---tgt_embed \
+--m_classes "[10, 150]" \
 --cc_matching \
---num_moe 8 \
---num_moe_topk 3 \
+--num_moe 2 \
+--num_moe_topk 1 \
+--num_queries 10 \
 ${@:1}
