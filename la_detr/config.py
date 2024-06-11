@@ -117,6 +117,8 @@ class BaseOptions(object):
                             help="Number of query slots")
         parser.add_argument('--pre_norm', action='store_true')
         parser.add_argument('--tgt_embed', action='store_true')
+        # parser.add_argument('--moe', type=int, default=0)
+        parser.add_argument('--moe', action='store_true')
         
         # other model configs
         parser.add_argument("--n_input_proj", type=int, default=2, help="#layers to encoder input")

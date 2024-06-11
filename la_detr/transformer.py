@@ -16,6 +16,7 @@ from torch import nn, Tensor
 import math
 import numpy as np
 from .attention import MultiheadAttention
+from typing import List
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -66,7 +67,7 @@ class Transformer(nn.Module):
                  modulate_t_attn=True,
                  bbox_embed_diff_each_layer=False,
                  m_classes=None, tgt_embed=False,
-                 class_anchor=False,
+                 class_anchor=False, moe=False,
                  ):
         super().__init__()
 
@@ -84,7 +85,8 @@ class Transformer(nn.Module):
 
         # TransformerDecoderLayerThin
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
-                                                dropout, activation, normalize_before, keep_query_pos=keep_query_pos)
+                                                dropout, activation, normalize_before, keep_query_pos=keep_query_pos,
+                                                m_classes=m_classes, num_queries=num_queries, moe=moe)
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec,
@@ -103,9 +105,10 @@ class Transformer(nn.Module):
         self.tgt_embed = tgt_embed
         self.class_anchor = class_anchor
         
-        if m_classes is not None and self.tgt_embed:
-            self.num_patterns = len(m_classes[1:-1].split(','))
-            self.patterns = nn.Embedding(self.num_patterns, d_model)
+        if m_classes is not None:
+            self.num_classes = len(m_classes[1:-1].split(','))
+            if self.tgt_embed:
+                self.patterns = nn.Embedding(self.num_classes, d_model)
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -149,10 +152,18 @@ class Transformer(nn.Module):
         mask_local = mask[:, 1:]
         pos_embed_local = pos_embed[1:]
 
-        if self.m_classes is not None and self.tgt_embed:
-            tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
-            if not self.class_anchor:
-                refpoint_embed = refpoint_embed.repeat(self.num_patterns, 1, 1)
+        if self.m_classes is not None:
+            if self.tgt_embed:
+                tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
+                if not self.class_anchor:
+                    refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+            else:
+                if self.class_anchor:
+                    tgt = torch.zeros(refpoint_embed.shape[0], bs, d).cuda()
+                else:
+                    tgt = torch.zeros(refpoint_embed.shape[0] * self.num_classes, bs, d).cuda()
+                    refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                    
             # ref_point_embed (30, 32, 2)
         else:
             tgt = torch.zeros(refpoint_embed.shape[0], bs, d).cuda()
@@ -555,12 +566,37 @@ class TransformerEncoderLayer(nn.Module):
             return self.forward_pre(src, src_mask, src_key_padding_mask, pos)
         return self.forward_post(src, src_mask, src_key_padding_mask, pos)
 
+class FeedForward(nn.Module):
+    def __init__(self, d_model, dim_feedforward, activation, dropout):
+        super().__init__()
+
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.activation = _get_activation_fn(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear2(self.dropout(self.activation(self.linear1(x))))
+
+class MoeLayer(nn.Module):
+    def __init__(self, experts: List[nn.Module], num_queries=10):
+        super().__init__()
+        assert len(experts) > 0
+        self.experts = nn.ModuleList(experts)
+        self.num_queries = num_queries
+
+    def forward(self, inputs: torch.Tensor, num_experts_per_tok=4) -> torch.Tensor:
+        results = torch.zeros_like(inputs)
+        for i, expert in enumerate(self.experts):
+            start, end = self.num_queries * i , self.num_queries * (i + 1)
+            results[start : end] += expert(inputs[start : end])
+        return results
 
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False, keep_query_pos=False,
-                 rm_self_attn_decoder=False):
+                 rm_self_attn_decoder=False, m_classes=None, num_queries=10, moe=False):
         super().__init__()
         # Decoder Self-Attention
         if not rm_self_attn_decoder:
@@ -587,16 +623,25 @@ class TransformerDecoderLayer(nn.Module):
         self.rm_self_attn_decoder = rm_self_attn_decoder
 
         # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        # self.linear1 = nn.Linear(d_model, dim_feedforward)
+        # self.dropout = nn.Dropout(dropout)
+        # self.linear2 = nn.Linear(dim_feedforward, d_model)
+
+        if m_classes is not None and moe:
+            self.num_class = len(m_classes[1:-1].split(','))
+            self.ffn = MoeLayer(
+                experts=[FeedForward(d_model, dim_feedforward, activation, dropout) for _ in range(self.num_class)],
+                num_queries=num_queries
+            )
+        else:
+            self.ffn = FeedForward(d_model, dim_feedforward, activation, dropout)
 
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
 
-        self.activation = _get_activation_fn(activation)
+        # self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
         self.keep_query_pos = keep_query_pos
 
@@ -674,7 +719,9 @@ class TransformerDecoderLayer(nn.Module):
 
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        # tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        tgt2 = self.ffn(tgt)
+
         tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
         return tgt
@@ -802,6 +849,7 @@ def build_transformer(args):
         tgt_embed=args.tgt_embed,
         num_queries=args.num_queries,
         class_anchor=args.class_anchor,
+        moe=args.moe,
     )
 
 

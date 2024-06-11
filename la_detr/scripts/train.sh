@@ -39,36 +39,6 @@ bsz=32
 
 gpunum=0
 
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id "qd_detr" \
-# ${@:1}
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id "qd_detr_40" \
-# --num_queries 40 \
-# ${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
@@ -82,12 +52,66 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "la_detr" \
+--exp_id "cc" \
 --m_classes "[10, 30, 70, 150]" \
---tgt_embed \
 --cc_matching \
---pos_query 1 \
 ${@:1}
+
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_id "cc_moe" \
+# --m_classes "[10, 30, 70, 150]" \
+# --cc_matching \
+# --moe \
+# ${@:1}
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_id "cc_anc" \
+# --m_classes "[10, 30, 70, 150]" \
+# --cc_matching \
+# --class_anchor \
+# ${@:1}
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_id "cc_moe_anc" \
+# --m_classes "[10, 30, 70, 150]" \
+# --cc_matching \
+# --class_anchor \
+# --moe \
+# ${@:1}
 
 # list="2018 2019 2020 2021 2022"
 # pqn=10
