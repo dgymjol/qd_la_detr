@@ -7,7 +7,9 @@ from scipy.optimize import linear_sum_assignment
 from torch import nn
 import torch.nn.functional as F
 from la_detr.span_utils import generalized_temporal_iou, span_cxw_to_xx
-
+import numpy as np
+import math
+import random
 
 class HungarianMatcher(nn.Module):
     """This class computes an assignment between the targets and the predictions of the network
@@ -19,7 +21,7 @@ class HungarianMatcher(nn.Module):
     def __init__(self,  cost_class: float = 1, cost_span: float = 1, cost_giou: float = 1,
                  span_loss_type: str = "l1", max_v_l: int = 75,
                  num_queries : int = 10, m_classes=None, cc_matcing=False,
-                 class_anchor=False, tgt_embed=False,):
+                 class_anchor=False, tgt_embed=False, pos_query=1):
         """Creates the matcher
 
         Params:
@@ -48,6 +50,8 @@ class HungarianMatcher(nn.Module):
             if not tgt_embed and not class_anchor:        
                 self.num_queries = num_queries // self.num_classes
 
+        self.pos_query = pos_query
+
     @torch.no_grad()
     def forward(self, outputs, targets):
         """ Performs the matching
@@ -73,32 +77,69 @@ class HungarianMatcher(nn.Module):
         if self.m_classes is not None and self.cc_matching:
             bs = outputs["pred_spans"].shape[0]
 
-            classwise_indices = []
-            for c in range(self.num_classes):
-                spans = []; sizes = []
-                for i, v in enumerate(targets["moment_class"]):
+            batchwise_pred_indices = [ [] for i in range(bs)]
+            batchwise_gt_indices = [ [] for i in range(bs)]
+
+            for cls_num in range(self.num_classes):
+
+                gt_class_idx_align = []
+
+                spans = []; target_sizes = []; org_target_sizes = []
+                for i, v in enumerate(targets["moment_class"]): # batch : i
                     count = 0
+
+                    sub_spans = []
+                    sub_spans_idxs = []
                     for j, m in enumerate(v["m_cls"]):
-                        if m == c:
-                            count += 1; spans.append(targets["span_labels"][i]["spans"][j].unsqueeze(0))
-                    sizes.append(count)
+                        if m == cls_num:
+                            count += 1
+                            sub_spans.append(targets["span_labels"][i]["spans"][j].unsqueeze(0))
+                            sub_spans_idxs.append(j)
+                    org_target_sizes.append(count)
+
+                    idx_align = dict()
+
+                    if count == 0: 
+                        target_sizes.append(0)
+                        idx_align = None
+                        
+                    elif count < self.pos_query:
+
+                        mult = (math.ceil(self.pos_query / count))
+
+                        for m in range(mult):
+                            spans += sub_spans
+
+                            for k in range(count):
+                                idx_align[count * m + k] = sub_spans_idxs[k]
+
+                        target_sizes.append(count * mult)
+
+                    else:
+                        for ii, sub_span_idx in enumerate(sub_spans_idxs):
+                            idx_align[ii] = sub_span_idx
+                        spans += sub_spans
+                        target_sizes.append(count)
+
+                    gt_class_idx_align.append(idx_align)
+
                 if len(spans) == 0:
-                    classwise_indices.append([])
                     continue
-                    
+                                    
                 tgt_spans = torch.cat(spans)
+                tgt_ids = torch.full([len(tgt_spans)], self.foreground_label)
                 
-                out_prob = outputs["pred_logits"][:, (self.num_queries*c):self.num_queries*(c+1), :].flatten(0, 1).softmax(-1)  # [batch_size * num_queries, num_classes]
+                out_prob = outputs["pred_logits"][:, (self.num_queries*cls_num):self.num_queries*(cls_num+1), :].flatten(0, 1).softmax(-1)  # [batch_size * num_queries, num_classes]
                 tgt_ids = torch.full([len(tgt_spans)], self.foreground_label)   # [total #spans in the batch]
                 cost_class = -out_prob[:, tgt_ids] 
                 
                 if 'aux_pred_logits' in outputs.keys():
-                    aux_out_prob = outputs["aux_pred_logits"][:, (self.num_queries*c):self.num_queries*(c+1), :].flatten(0, 1).softmax(-1)
-                    aux_tgt_ids = torch.full([len(tgt_spans)], c)
+                    aux_out_prob = outputs["aux_pred_logits"][:, (self.num_queries*cls_num):self.num_queries*(cls_num+1), :].flatten(0, 1).softmax(-1)
+                    aux_tgt_ids = torch.full([len(tgt_spans)], cls_num)
                     cost_class += (-aux_out_prob[:, aux_tgt_ids])
     
                 # We flatten to compute the cost matrices in a batch
-                out_spans = outputs["pred_spans"][:, (self.num_queries*c):self.num_queries*(c+1), :].flatten(0, 1)  # [batch_size * num_queries, 2]
+                out_spans = outputs["pred_spans"][:, (self.num_queries*cls_num):self.num_queries*(cls_num+1), :].flatten(0, 1)  # [batch_size * num_queries, 2]
 
                 # Compute the L1 cost between spans
                 cost_span = torch.cdist(out_spans, tgt_spans, p=1)  # [batch_size * num_queries, total #spans in the batch]
@@ -115,34 +156,18 @@ class HungarianMatcher(nn.Module):
                 # indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
                 # classwise_indices.append([(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices])
                 
-                batch2idx = {}
-                for i, c in enumerate(C.split(sizes, -1)):
-                    pred, gt = linear_sum_assignment(c[i])
-                    if len(gt) > 0:
-                        gt_idx2pred_idx = {}
-                        for j, g in enumerate(gt):
-                            gt_idx2pred_idx[g] = pred[j]
-                        batch2idx[i] = gt_idx2pred_idx
-                classwise_indices.append(batch2idx)
-            
-            final_indices = []
-            for i, v in enumerate(targets["moment_class"]): # batch wise
-                # v = {'m_cls': tensor([2, 1, 0, 0, 0], device='cuda:0')}
-                final = [] # (pred, gt)
-                cls_idx = [0] * self.num_classes
-                
-                gt_idxs = []
-                pred_idxs = []
-                for j, m in enumerate(v["m_cls"]): # iter tensor([2, 1, 0, 0, 0]
-                    cls_num = int(m)
-                    gt_idx = cls_idx[cls_num]
-                    pred_idx = classwise_indices[cls_num][i][gt_idx]
-                    pred_idx += (self.num_queries*cls_num)
-                    gt_idxs.append(j)
-                    pred_idxs.append(pred_idx)
-                    cls_idx[cls_num] += 1
-                final_indices.append((torch.as_tensor(pred_idxs, dtype=torch.int64), torch.as_tensor(gt_idxs, dtype=torch.int64)))
-                    
+
+                for i, c in enumerate(C.split(target_sizes, -1)):
+                    pred_temp_idxs, gt_temp_idxs = (linear_sum_assignment(c[i]))
+
+                    for pred_temp_idx in pred_temp_idxs:
+                        batchwise_pred_indices[i].append(pred_temp_idx + (self.num_queries * cls_num))
+
+                    for gt_temp_idx in gt_temp_idxs:
+                        batchwise_gt_indices[i].append(gt_class_idx_align[i][gt_temp_idx])
+
+            final_indices = [(torch.as_tensor(p, dtype=torch.int64), torch.as_tensor(g, dtype=torch.int64)) for p, g in zip(batchwise_pred_indices, batchwise_gt_indices)]
+        
             return final_indices
         
         bs, num_queries = outputs["pred_spans"].shape[:2]
@@ -203,5 +228,5 @@ def build_matcher(args):
         cost_span=args.set_cost_span, cost_giou=args.set_cost_giou,
         cost_class=args.set_cost_class, span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
         num_queries=args.num_queries, m_classes=args.m_classes, cc_matcing=args.cc_matching,
-        tgt_embed=args.tgt_embed, class_anchor=args.class_anchor,
+        tgt_embed=args.tgt_embed, class_anchor=args.class_anchor, pos_query=args.pos_query
     )

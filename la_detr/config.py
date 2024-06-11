@@ -21,7 +21,7 @@ class BaseOptions(object):
     def initialize(self):
         self.initialized = True
         parser = argparse.ArgumentParser()
-        parser.add_argument("--dset_name", type=str, choices=["hl", 'tvsum', 'charadesSTA', 'tacos'])
+        parser.add_argument("--dset_name", type=str, choices=["hl", 'tvsum', 'charadesSTA', 'tacos', 'nlq'])
         parser.add_argument("--dset_domain", type=str, choices=["BK", "BT", "DS", "FM", "GA", "MS", "PK", "PR", "VT", "VU"], 
                             help="Domain to train for tvsum dataset. (Only used for tvsum)")
         
@@ -90,6 +90,7 @@ class BaseOptions(object):
         parser.add_argument('--cls_both', action="store_true")
         parser.add_argument('--score_fg', action="store_true")
         parser.add_argument('--class_anchor', action="store_true")
+        parser.add_argument("--pos_query", default=1, type=int, help="pos_query")
         
         
         # * Transformer

@@ -86,4 +86,34 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --m_classes "[10, 30, 70, 150]" \
 --tgt_embed \
 --cc_matching \
+--pos_query 1 \
 ${@:1}
+
+# list="2018 2019 2020 2021 2022"
+# pqn=10
+
+# for var in $list
+# do
+#   echo $var
+
+#   CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+#   --dset_name ${dset_name} \
+#   --ctx_mode ${ctx_mode} \
+#   --train_path ${train_path} \
+#   --eval_path ${eval_path} \
+#   --eval_split_name ${eval_split_name} \
+#   --v_feat_dirs ${v_feat_dirs[@]} \
+#   --v_feat_dim ${v_feat_dim} \
+#   --t_feat_dir ${t_feat_dir} \
+#   --t_feat_dim ${t_feat_dim} \
+#   --bsz ${bsz} \
+#   --results_root ${results_root} \
+#   --exp_id la_detr_p${pqn}-${var} \
+#   --m_classes "[10, 30, 70, 150]" \
+#   --tgt_embed \
+#   --cc_matching \
+#   --num_queries 10 \
+#   --pos_query ${pqn} \
+#   ${@:1}
+
+# done
