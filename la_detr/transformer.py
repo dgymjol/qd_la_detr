@@ -32,6 +32,32 @@ class MLP(nn.Module):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
+class FeedForward(nn.Module):
+    def __init__(self, d_model, dim_feedforward, activation, dropout):
+        super().__init__()
+
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.activation = _get_activation_fn(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear2(self.dropout(self.activation(self.linear1(x))))
+
+class MoeLayer(nn.Module):
+    def __init__(self, experts: List[nn.Module], num_queries=10):
+        super().__init__()
+        assert len(experts) > 0
+        self.experts = nn.ModuleList(experts)
+        self.num_queries = num_queries
+
+    def forward(self, inputs: torch.Tensor, num_experts_per_tok=4) -> torch.Tensor:
+        results = torch.zeros_like(inputs)
+        for i, expert in enumerate(self.experts):
+            start, end = self.num_queries * i , self.num_queries * (i + 1)
+            results[start : end] += expert(inputs[start : end])
+        return results
+
 def inverse_sigmoid(x, eps=1e-3):
     x = x.clamp(min=0, max=1)
     x1 = x.clamp(min=eps)
@@ -67,7 +93,7 @@ class Transformer(nn.Module):
                  modulate_t_attn=True,
                  bbox_embed_diff_each_layer=False,
                  m_classes=None, tgt_embed=False,
-                 class_anchor=False, moe=False,
+                 class_anchor=False, ffn_moe=False,
                  ):
         super().__init__()
 
@@ -86,7 +112,7 @@ class Transformer(nn.Module):
         # TransformerDecoderLayerThin
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before, keep_query_pos=keep_query_pos,
-                                                m_classes=m_classes, num_queries=num_queries, moe=moe)
+                                                m_classes=m_classes, num_queries=num_queries, ffn_moe=ffn_moe)
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec,
@@ -566,37 +592,12 @@ class TransformerEncoderLayer(nn.Module):
             return self.forward_pre(src, src_mask, src_key_padding_mask, pos)
         return self.forward_post(src, src_mask, src_key_padding_mask, pos)
 
-class FeedForward(nn.Module):
-    def __init__(self, d_model, dim_feedforward, activation, dropout):
-        super().__init__()
-
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-        self.activation = _get_activation_fn(activation)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear2(self.dropout(self.activation(self.linear1(x))))
-
-class MoeLayer(nn.Module):
-    def __init__(self, experts: List[nn.Module], num_queries=10):
-        super().__init__()
-        assert len(experts) > 0
-        self.experts = nn.ModuleList(experts)
-        self.num_queries = num_queries
-
-    def forward(self, inputs: torch.Tensor, num_experts_per_tok=4) -> torch.Tensor:
-        results = torch.zeros_like(inputs)
-        for i, expert in enumerate(self.experts):
-            start, end = self.num_queries * i , self.num_queries * (i + 1)
-            results[start : end] += expert(inputs[start : end])
-        return results
 
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False, keep_query_pos=False,
-                 rm_self_attn_decoder=False, m_classes=None, num_queries=10, moe=False):
+                 rm_self_attn_decoder=False, m_classes=None, num_queries=10, ffn_moe=False):
         super().__init__()
         # Decoder Self-Attention
         if not rm_self_attn_decoder:
@@ -627,7 +628,7 @@ class TransformerDecoderLayer(nn.Module):
         # self.dropout = nn.Dropout(dropout)
         # self.linear2 = nn.Linear(dim_feedforward, d_model)
 
-        if m_classes is not None and moe:
+        if m_classes is not None and ffn_moe:
             self.num_class = len(m_classes[1:-1].split(','))
             self.ffn = MoeLayer(
                 experts=[FeedForward(d_model, dim_feedforward, activation, dropout) for _ in range(self.num_class)],
@@ -849,7 +850,7 @@ def build_transformer(args):
         tgt_embed=args.tgt_embed,
         num_queries=args.num_queries,
         class_anchor=args.class_anchor,
-        moe=args.moe,
+        ffn_moe=args.ffn_moe,
     )
 
 

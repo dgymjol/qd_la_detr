@@ -13,6 +13,8 @@ from la_detr.transformer import build_transformer
 from la_detr.position_encoding import build_position_encoding
 from la_detr.misc import accuracy
 import numpy as np
+from typing import List
+
 def inverse_sigmoid(x, eps=1e-3):
     x = x.clamp(min=0, max=1)
     x1 = x.clamp(min=eps)
@@ -41,7 +43,21 @@ def focal_loss(inputs, targets, weight, alpha: float = 0.25, gamma: float = 2):
     loss = (alpha * (1 - pt) ** gamma * ce_loss)
     return loss
 
-    
+
+class MoeLayer(nn.Module):
+    def __init__(self, experts: List[nn.Module], num_queries=10):
+        super().__init__()
+        assert len(experts) > 0
+        self.experts = nn.ModuleList(experts)
+        self.num_queries = num_queries
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        results = []
+        for i, expert in enumerate(self.experts):
+            start, end = self.num_queries * i , self.num_queries * (i + 1)
+            results.append(expert(inputs[:, :, start : end, :]))
+        return torch.cat(results, dim=-2)
+
 class QDDETR(nn.Module):
     """ QD DETR. """
 
@@ -49,7 +65,7 @@ class QDDETR(nn.Module):
                  num_queries, input_dropout, aux_loss=False,
                  contrastive_align_loss=False, contrastive_hdim=64,
                  max_v_l=75, span_loss_type="l1", use_txt_pos=False, n_input_proj=2, aud_dim=0, 
-                 m_classes=None, cls_both=False, score_fg=False, class_anchor=False,):
+                 m_classes=None, cls_both=False, score_fg=False, class_anchor=False, class_moe=False, span_moe=False):
         """ Initializes the model.
         Parameters:
             transformer: torch module of the transformer architecture. See transformer.py
@@ -77,15 +93,14 @@ class QDDETR(nn.Module):
         hidden_dim = transformer.d_model
         self.span_loss_type = span_loss_type
         self.max_v_l = max_v_l
-        span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
-        self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
-        # self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
 
         self.m_classes=m_classes
         self.cls_both=cls_both
         self.score_fg=score_fg
-        
+
+        span_pred_dim = 2 if span_loss_type == "l1" else max_v_l * 2
         if self.m_classes is None:
+            self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
             self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
             self.num_patterns = 1
         else:
@@ -94,13 +109,29 @@ class QDDETR(nn.Module):
                 self.num_patterns = len(self.m_vals)
             else:
                 self.num_patterns = 1
-            self.aux_class_embed = nn.Linear(hidden_dim, len(self.m_vals) +1 )  # [:-1] : foreground / [-1] : background
-            self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+
+            if class_moe:
+                self.class_embed = MoeLayer(
+                    experts=[nn.Linear(hidden_dim, 2) for _ in range(len(self.m_vals))],
+                    num_queries=num_queries
+                )       
+            else:
+                self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+
+            if span_moe:
+                self.span_embed = MoeLayer(
+                    experts=[MLP(hidden_dim, hidden_dim, span_pred_dim, 3) for _ in range(len(self.m_vals))],
+                    num_queries=num_queries
+                )
+            else:
+                self.span_embed = MLP(hidden_dim, hidden_dim, span_pred_dim, 3)
+            
                 
         self.use_txt_pos = use_txt_pos
         self.n_input_proj = n_input_proj
         # self.foreground_thd = foreground_thd
         # self.background_thd = background_thd
+        # if self.m_classes is not None
         self.query_embed = nn.Embedding(num_queries, 2*self.num_patterns)
         relu_args = [True] * 3
         relu_args[n_input_proj-1] = False
@@ -634,6 +665,7 @@ def build_model(args):
             m_classes=args.m_classes,
             cls_both=args.cls_both, score_fg=args.score_fg,
             class_anchor=args.class_anchor,
+            class_moe=args.class_moe, span_moe=args.span_moe
         )
     else:
         model = QDDETR(
@@ -654,6 +686,7 @@ def build_model(args):
             m_classes=args.m_classes,
             cls_both=args.cls_both, score_fg=args.score_fg,
             class_anchor=args.class_anchor,
+            class_moe=args.class_moe, span_moe=args.span_moe
         )
 
     matcher = build_matcher(args)
