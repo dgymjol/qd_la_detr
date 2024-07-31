@@ -362,6 +362,7 @@ def start_training():
             txt_drop_ratio=opt.txt_drop_ratio,
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
+            crop=opt.crop,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset(**dataset_config)
@@ -385,6 +386,7 @@ def start_training():
             txt_drop_ratio=opt.txt_drop_ratio,
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
+            crop=opt.crop,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset_audio(**dataset_config)
@@ -395,6 +397,7 @@ def start_training():
         dataset_config["data_path"] = opt.eval_path
         dataset_config["txt_drop_ratio"] = 0
         dataset_config["q_feat_dir"] = opt.t_feat_dir.replace("sub_features", "text_features")  # for pretraining
+        dataset_config["crop"] = False
         # dataset_config["load_labels"] = False  # uncomment to calculate eval loss
         if opt.a_feat_dir is None:
             eval_dataset = StartEndDataset(**dataset_config)

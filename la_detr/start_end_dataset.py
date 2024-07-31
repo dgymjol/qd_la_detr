@@ -10,6 +10,7 @@ from utils.tensor_utils import pad_sequences_1d
 from la_detr.span_utils import span_xx_to_cxw
 from torchtext import vocab
 import torch.nn as nn
+from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class StartEndDataset(Dataset):
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
                  clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0,
-                 dset_domain=None, m_classes = None):
+                 dset_domain=None, m_classes = None, crop=False):
         self.dset_name = dset_name
         self.data_path = data_path
         self.data_ratio = data_ratio
@@ -100,7 +101,7 @@ class StartEndDataset(Dataset):
         self.txt_drop_ratio = txt_drop_ratio
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
-
+        self.crop = crop
 
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
@@ -146,6 +147,12 @@ class StartEndDataset(Dataset):
         else:
             self.m_vals = None
 
+    def crop_clip_index(self, start_index, end_index, non_idx=False):
+        candidates = list(range(start_index, end_index + 1, 2))
+        if non_idx:
+            candidates.append(-1) # not crop
+        return random.sample(candidates, 1)[0]
+        
     def load_data(self):
         datalist = load_jsonl(self.data_path)
         if self.data_ratio != 1:
@@ -153,6 +160,86 @@ class StartEndDataset(Dataset):
             datalist = datalist[:n_examples]
             logger.info("Using {}% of the data: {} examples"
                         .format(self.data_ratio * 100, n_examples))
+            
+        if self.crop:
+
+            org_datalist = deepcopy(datalist)
+            datalist = []
+
+            for data in org_datalist:
+                datalist.append(data)
+
+                moments = data['relevant_windows']
+
+                # STEP 1: make crop index list
+                if len(moments) > 1:
+
+                    crop_clip_indices = []
+                    crop_nothing = True
+                    for i in range(len(moments) - 1):
+                        random_indices = self.crop_clip_index(moments[i][1], moments[i+1][0], non_idx=True)
+                        crop_clip_indices.append(random_indices)
+                        if random_indices != -1:
+                            crop_nothing = False
+
+                    fore_crop = self.crop_clip_index(0, moments[0][0])
+                    back_crop = self.crop_clip_index(moments[-1][1], 150)
+                else:
+                    # datalist.append(data) #
+                    continue
+
+                # STEP 2-1 : If there is no cropped moment
+                if crop_nothing: 
+                    if fore_crop == 0 and back_crop == 150: # no variance
+                        # datalist.append(data) #
+                        continue
+                    else:
+                        new_data = deepcopy(data)
+                        new_data['duration'] -= fore_crop
+                        new_data['duration'] -= (150 - back_crop)
+
+                        fore_crop_div2 = 0 if fore_crop == 0 else fore_crop // 2
+                        new_data['relevant_clip_ids'] = [ci - fore_crop_div2 for ci in data['relevant_clip_ids']]
+
+                        new_data['relevant_windows'] = [[s - fore_crop, e - fore_crop] for s, e in data['relevant_windows']]
+                        datalist.append(new_data)
+                        continue
+                
+                # STEP 2-2 : If there is any cropped moment
+                clip_idx = 0
+                window_idx = 0
+                start_crop_idx = fore_crop
+                for end_crop_idx in crop_clip_indices:
+                    if end_crop_idx == -1:
+                        continue
+                    
+                    new_data = deepcopy(data)
+                    new_data['duration'] =  end_crop_idx - start_crop_idx
+
+                    start_crop_idx_div2 = 0 if start_crop_idx == 0 else start_crop_idx // 2
+                    new_data['relevant_clip_ids'] = []
+                    new_data['saliency_scores'] = []
+                    for ci, ss in zip(data['relevant_clip_ids'][clip_idx :], data['saliency_scores'][clip_idx :]):
+                        if ci * 2 < end_crop_idx:
+                            clip_idx += 1
+                            new_data['relevant_clip_ids'].append(ci - start_crop_idx_div2)
+                            new_data['saliency_scores'].append(ss)
+                        else:
+                            break
+                    
+                    new_data['relevant_windows'] = []
+                    for ws, we in data['relevant_windows'][window_idx :]:
+                        if we <= end_crop_idx:
+                            window_idx += 1
+                            new_data['relevant_windows'].append([ws - start_crop_idx, we - start_crop_idx])
+                        else:
+                            break
+
+                    datalist.append(new_data)
+
+                    start_crop_idx = end_crop_idx
+
+            logger.info(f"Oracle Crop : {len(org_datalist)} -> {len(datalist)}")
         return datalist
 
     def __len__(self):
