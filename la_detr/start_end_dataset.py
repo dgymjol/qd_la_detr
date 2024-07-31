@@ -167,6 +167,7 @@ class StartEndDataset(Dataset):
             datalist = []
 
             for data in org_datalist:
+                data["crop_timestamp"] = (0, self.max_v_l)
                 datalist.append(data)
 
                 moments = data['relevant_windows']
@@ -202,6 +203,7 @@ class StartEndDataset(Dataset):
                         new_data['relevant_clip_ids'] = [ci - fore_crop_div2 for ci in data['relevant_clip_ids']]
 
                         new_data['relevant_windows'] = [[s - fore_crop, e - fore_crop] for s, e in data['relevant_windows']]
+                        new_data['crop_timestamp'] = (fore_crop // 2, back_crop // 2)
                         datalist.append(new_data)
                         continue
                 
@@ -234,7 +236,8 @@ class StartEndDataset(Dataset):
                             new_data['relevant_windows'].append([ws - start_crop_idx, we - start_crop_idx])
                         else:
                             break
-
+                        
+                    new_data['crop_timestamp'] = (start_crop_idx // 2, end_crop_idx // 2)
                     datalist.append(new_data)
 
                     start_crop_idx = end_crop_idx
@@ -256,7 +259,10 @@ class StartEndDataset(Dataset):
             model_inputs["query_feat"] = self._get_query_feat_by_qid(meta["qid"])  # (Dq, ) or (Lq, Dq)
             
         if self.use_video:
-            model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
+            if self.crop:
+                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Dv)
+            else:
+                model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
         else:
             ctx_l = self.max_v_l
@@ -534,6 +540,36 @@ class StartEndDataset(Dataset):
                 q_feat = self.random_drop_rows(q_feat)
         return torch.from_numpy(q_feat)  # (D, ) or (Lq, D)
 
+    def _get_query_feat_by_qid(self, qid):
+        if self.dset_name == 'tvsum':
+            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid))) # 'token', 'text'
+            return torch.from_numpy(q_feat['token'])
+        # youtube-hl
+        elif self.dset_name == 'youtube_uni':
+            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid)))
+            return torch.from_numpy(q_feat['last_hidden_state'])
+        
+        elif self.dset_name in ['tacos', 'nlq']:
+            q_feat_path = join(self.q_feat_dir, f"{qid}.npz")
+            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
+            if self.q_feat_type == "last_hidden_state":
+                q_feat = q_feat[:self.max_q_l]
+            if self.normalize_t:
+                q_feat = l2_normalize_np_array(q_feat)
+            if self.txt_drop_ratio > 0:
+                q_feat = self.random_drop_rows(q_feat)
+        else:
+            # QVhighlight dataset
+            q_feat_path = join(self.q_feat_dir, f"qid{qid}.npz")
+            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
+            if self.q_feat_type == "last_hidden_state":
+                q_feat = q_feat[:self.max_q_l]
+            if self.normalize_t:
+                q_feat = l2_normalize_np_array(q_feat)
+            if self.txt_drop_ratio > 0:
+                q_feat = self.random_drop_rows(q_feat)
+        return torch.from_numpy(q_feat)  # (D, ) or (Lq, D)
+    
     def random_drop_rows(self, embeddings):
         """randomly mask num_drop rows in embeddings to be zero.
         Args:
@@ -595,6 +631,66 @@ class StartEndDataset(Dataset):
                 except:
                     _feat_path = join(_feat_dir, f"{vid}.npy")
                     _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
+                if self.normalize_v:
+                    _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list]
+            v_feat = np.concatenate(v_feat_list, axis=1)
+        return torch.from_numpy(v_feat)  # (Lv, D)
+
+
+    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp):
+        s, e = crop_timestamp
+        if self.dset_name == 'tvsum':
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                _feat_path = join(_feat_dir, f"{vid}_rgb.npy")
+                _feat_rgb = np.load(_feat_path)[s:e].astype(np.float32)
+
+                _feat_path = join(_feat_dir, f"{vid}_opt.npy")
+                _feat_opt = np.load(_feat_path)[s:e].astype(np.float32)
+                
+                _feat = np.concatenate([_feat_rgb, _feat_opt], axis=-1)
+                # _feat = _feat_rgb
+                if self.normalize_v:
+                    _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list]
+            v_feat = np.concatenate(v_feat_list, axis=1)
+
+        elif self.dset_name == 'youtube_uni':
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                # Only single npz files per directory
+                try:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][s:e].astype(np.float32)
+                except:
+                    _feat_path = join(_feat_dir, f"{vid}.npy")
+                    _feat = np.load(_feat_path)[s:e].astype(np.float32)
+                
+                # _feat = _feat_rgb
+                if self.normalize_v:
+                    _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(_feat)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list] # TODO do we need to cut the length over the min_len?
+            v_feat = np.concatenate(v_feat_list, axis=1)
+
+        else:
+            v_feat_list = []
+            for _feat_dir in self.v_feat_dirs:
+                try:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][s:e].astype(np.float32)
+                except:
+                    _feat_path = join(_feat_dir, f"{vid}.npy")
+                    _feat = np.load(_feat_path)[s:e].astype(np.float32)
                 if self.normalize_v:
                     _feat = l2_normalize_np_array(_feat)
                 v_feat_list.append(_feat)
