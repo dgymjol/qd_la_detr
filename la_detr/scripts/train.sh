@@ -52,7 +52,7 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "tgt_cc_crop" \
+--exp_id "tgt_cc_crop_adv" \
 --m_classes "[10, 30, 70, 150]" \
 --cc_matching \
 --tgt_embed \

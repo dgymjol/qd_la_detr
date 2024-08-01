@@ -163,11 +163,35 @@ class StartEndDataset(Dataset):
             
         if self.crop:
 
+            # long moment database
+            db_range = [100, 50, 10] # moment class borderline
+            reverse_db_range = ([150] + db_range)[:-1][::-1] # moment class borderline
+            moment_db = [[], # longer than 100
+                         [], # longer than 50
+                         []] # longer than 10
+
+            for data in datalist:
+                moments = data['relevant_windows']
+                for start, end in moments:
+                    if (end-start) >= db_range[0]:
+                        moment_db[0].append((data['vid'], [start, end]))
+                    elif (end-start) >= db_range[1]:
+                        moment_db[1].append((data['vid'], [start, end]))
+                    elif (end-start) > db_range[2]:
+                        moment_db[2].append((data['vid'], [start, end]))
+
+            logger.info(f"Moment Database")
+            logger.info(f"verylong_moment_db (>= {db_range[0]}) : {len(moment_db[0])}")
+            logger.info(f"long_moment_db (>= {db_range[1]}) : {len(moment_db[1])}")
+            logger.info(f"middle_moment_db (>= {db_range[2]}) : {len(moment_db[2])}")
+
             org_datalist = deepcopy(datalist)
             datalist = []
 
+            # make new datalist including short-augmented data
             for data in org_datalist:
                 data["crop_timestamp"] = (0, self.max_v_l)
+                data['fore_moment'], data['back_moment'] = None, None
                 datalist.append(data)
 
                 moments = data['relevant_windows']
@@ -195,7 +219,11 @@ class StartEndDataset(Dataset):
                         # datalist.append(data) #
                         continue
                     else:
+                        fore_moment, back_moment = None, None
+                        fore_duration, back_duration = 0, 0
+
                         new_data = deepcopy(data)
+
                         new_data['duration'] -= fore_crop
                         new_data['duration'] -= (150 - back_crop)
 
@@ -204,6 +232,8 @@ class StartEndDataset(Dataset):
 
                         new_data['relevant_windows'] = [[s - fore_crop, e - fore_crop] for s, e in data['relevant_windows']]
                         new_data['crop_timestamp'] = (fore_crop // 2, back_crop // 2)
+                        new_data['fore_moment'], new_data['back_moment'] = None, None
+
                         datalist.append(new_data)
                         continue
                 
@@ -215,29 +245,49 @@ class StartEndDataset(Dataset):
                     if end_crop_idx == -1:
                         continue
                     
+                    fore_moment, back_moment = None, None
+                    fore_duration, back_duration = 0, 0
+                    
+                    for i, bl in enumerate(reverse_db_range):
+                        if (150 - (end_crop_idx - start_crop_idx)) // 2 < bl:
+                            db_idx = len(reverse_db_range) - 1 - i
+                            fore_moment = random.choice(moment_db[db_idx])
+                            fore_duration = fore_moment[1][1] - fore_moment[1][0]
+                            break
+
+                    for i, bl in enumerate(reverse_db_range):
+                        if (150 - (end_crop_idx - start_crop_idx + fore_duration)) < bl:
+                            db_idx = len(reverse_db_range) - 1 - i
+                            back_moment = random.choice(moment_db[db_idx])
+                            back_duration = back_moment[1][1] - back_moment[1][0]
+                            break      
+
                     new_data = deepcopy(data)
-                    new_data['duration'] =  end_crop_idx - start_crop_idx
+                    new_data['duration'] =  end_crop_idx - start_crop_idx + fore_duration + back_duration
 
                     start_crop_idx_div2 = 0 if start_crop_idx == 0 else start_crop_idx // 2
-                    new_data['relevant_clip_ids'] = []
-                    new_data['saliency_scores'] = []
+                    fore_duration_div2 = 0 if fore_duration == 0 else fore_duration // 2
+                    new_data['relevant_clip_ids'], new_data['saliency_scores'] = [], []
+
                     for ci, ss in zip(data['relevant_clip_ids'][clip_idx :], data['saliency_scores'][clip_idx :]):
                         if ci * 2 < end_crop_idx:
-                            clip_idx += 1
-                            new_data['relevant_clip_ids'].append(ci - start_crop_idx_div2)
+                            new_data['relevant_clip_ids'].append(ci - start_crop_idx_div2 + fore_duration_div2)
                             new_data['saliency_scores'].append(ss)
+                            clip_idx += 1
                         else:
                             break
                     
                     new_data['relevant_windows'] = []
                     for ws, we in data['relevant_windows'][window_idx :]:
                         if we <= end_crop_idx:
+                            new_data['relevant_windows'].append([ws - start_crop_idx + fore_duration, we - start_crop_idx + fore_duration])
                             window_idx += 1
-                            new_data['relevant_windows'].append([ws - start_crop_idx, we - start_crop_idx])
                         else:
                             break
                         
                     new_data['crop_timestamp'] = (start_crop_idx // 2, end_crop_idx // 2)
+                    new_data['fore_moment'] = None if not fore_moment else [fore_moment[0], (fore_moment[1][0] // 2, fore_moment[1][1] // 2)]
+                    new_data['back_moment'] = None if not back_moment else [back_moment[0], (back_moment[1][0] // 2, back_moment[1][1] // 2)]
                     datalist.append(new_data)
 
                     start_crop_idx = end_crop_idx
@@ -260,7 +310,7 @@ class StartEndDataset(Dataset):
             
         if self.use_video:
             if self.crop:
-                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Dv)
+                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"], meta["fore_moment"], meta["back_moment"])  # (Lv, Dv)
             else:
                 model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
@@ -641,8 +691,9 @@ class StartEndDataset(Dataset):
         return torch.from_numpy(v_feat)  # (Lv, D)
 
 
-    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp):
+    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp, fore_moment, back_moment):
         s, e = crop_timestamp
+
         if self.dset_name == 'tvsum':
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
@@ -685,21 +736,64 @@ class StartEndDataset(Dataset):
         else:
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
-                try:
-                    _feat_path = join(_feat_dir, f"{vid}.npz")
-                    _feat = np.load(_feat_path)["features"][s:e].astype(np.float32)
+                feat_num = 1
+                try:      
+                    feats = []
+                    if fore_moment:
+                        fore_vid, (fore_s, fore_e) = fore_moment
+                        fore_feat_path = join(_feat_dir, f"{fore_vid}.npz")
+                        fore_feat = np.load(fore_feat_path)["features"][fore_s:fore_e].astype(np.float32)
+                        feats.append(fore_feat)
+                        feat_num += 1
+
+                    mid_feat_path = join(_feat_dir, f"{vid}.npz")
+                    mid_feat = np.load(mid_feat_path)["features"][s:e].astype(np.float32)
+                    feats.append(mid_feat)
+
+                    if back_moment:
+                        back_vid, (back_s, back_e) = back_moment
+                        back_feat_path = join(_feat_dir, f"{back_vid}.npz")
+                        back_feat = np.load(back_feat_path)["features"][back_s:back_e].astype(np.float32)
+                        feats.append(back_feat)
+                        feat_num += 1
                 except:
-                    _feat_path = join(_feat_dir, f"{vid}.npy")
-                    _feat = np.load(_feat_path)[s:e].astype(np.float32)
-                if self.normalize_v:
-                    _feat = l2_normalize_np_array(_feat)
-                v_feat_list.append(_feat)
+                    feats = []
+                    if fore_moment:
+                        fore_vid, (fore_s, fore_e) = fore_moment
+                        fore_feat_path = join(_feat_dir, f"{fore_vid}.npy")
+                        fore_feat = np.load(fore_feat_path)[fore_s:fore_e].astype(np.float32)
+                        feats.append(fore_feat)
+                        feat_num += 1
+
+                    mid_feat_path = join(_feat_dir, f"{vid}.npy")
+                    mid_feat = np.load(mid_feat_path)[s:e].astype(np.float32)
+                    feats.append(mid_feat)
+
+                    if back_moment:
+                        back_vid, (back_s, back_e) = back_moment
+                        back_feat_path = join(_feat_dir, f"{back_vid}.npy")
+                        back_feat = np.load(back_feat_path)[back_s:back_e].astype(np.float32)
+                        feats.append(back_feat)
+                        feat_num += 1
+
+
+                # if self.normalize_v:
+                #     _feat = l2_normalize_np_array(_feat)
+                v_feat_list.append(feats)
             # some features are slightly longer than the others
-            min_len = min([len(e) for e in v_feat_list])
-            v_feat_list = [e[:min_len] for e in v_feat_list]
+            
+            for i in range(feat_num):
+                min_len = min([len(e[i]) for e in v_feat_list])
+                for j in range(len(v_feat_list)):
+                    v_feat_list[j][i] = v_feat_list[j][i][:min_len]
+
+            for j in range(len(v_feat_list)):
+                _feat =  np.concatenate(v_feat_list[j], axis=0)
+                if self.normalize_v:
+                    v_feat_list[j] = l2_normalize_np_array(_feat)
+
             v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
-
 
 
 def start_end_collate(batch):

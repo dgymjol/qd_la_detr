@@ -52,7 +52,7 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "base_crop" \
+--exp_id "base_crop_adv" \
 --crop \
 ${@:1}
 
