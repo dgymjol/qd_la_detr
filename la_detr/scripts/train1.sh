@@ -2,7 +2,7 @@ dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
-results_root=results
+results_root=results_crop
 exp_id=exp
 
 ######## data paths
@@ -39,6 +39,25 @@ bsz=32
 
 gpunum=1
 
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 10 \
+--back_min 10 \
+--mid_min 15 \
+--crop_random \
+${@:1}
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
@@ -52,11 +71,175 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id "base_crop_adv" \
+--exp_id "base_crop_adv2" \
 --crop \
+--fore_min 15 \
+--back_min 15 \
+--mid_min 15 \
+--crop_random \
+${@:1}
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 15 \
+--back_min 15 \
+--mid_min 20 \
+--crop_random \
+${@:1}
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 20 \
+--back_min 20 \
+--mid_min 20 \
+--crop_random \
 ${@:1}
 
 
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 20 \
+--back_min 20 \
+--mid_min 30 \
+--crop_random \
+${@:1}
+
+
+
+
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 10 \
+--back_min 10 \
+--mid_min 15 \
+${@:1}
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 15 \
+--back_min 15 \
+--mid_min 15 \
+${@:1}
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 15 \
+--back_min 15 \
+--mid_min 20 \
+${@:1}
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 20 \
+--back_min 20 \
+--mid_min 20 \
+${@:1}
+
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--exp_id "base_crop_adv2" \
+--crop \
+--fore_min 20 \
+--back_min 20 \
+--mid_min 30 \
+${@:1}
+
 # CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 # --dset_name ${dset_name} \
 # --ctx_mode ${ctx_mode} \
@@ -69,9 +252,25 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
+# --exp_id "base_crop_adv" \
+# --crop \
+# ${@:1}
+
+
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_idbaserop_adv" \
 # ${@:1}
 
 
@@ -87,30 +286,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_class_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_moe \
-# ${@:1}
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id "cc_span_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --span_moe \
-# ${@:1}
-
+# --exp_idbase\
 
 
 # CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -125,10 +301,39 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_ffn_class_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_moe \
+# --exp_idbaselass_moe" \
+# ${@:1}
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_idbasepan_moe" \
+# ${@:1}
+
+
+
+# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+# --dset_name ${dset_name} \
+# --ctx_mode ${ctx_mode} \
+# --train_path ${train_path} \
+# --eval_path ${eval_path} \
+# --eval_split_name ${eval_split_name} \
+# --v_feat_dirs ${v_feat_dirs[@]} \
+# --v_feat_dim ${v_feat_dim} \
+# --t_feat_dir ${t_feat_dir} \
+# --t_feat_dim ${t_feat_dim} \
+# --bsz ${bsz} \
+# --results_root ${results_root} \
+# --exp_idbasefn_class_moe" \
 # --ffn_moe \
 # ${@:1}
 
@@ -146,10 +351,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_ffn_span_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --span_moe \
+# --exp_idbasefn_span_moe" \
 # --ffn_moe \
 # ${@:1}
 
@@ -168,10 +370,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_class_span_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_moe \
+# --exp_idbaselass_span_moe" \
 # --span_moe \
 # ${@:1}
 
@@ -187,10 +386,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_ffn_class_span_moe" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_moe \
+# --exp_idbasefn_class_span_moe" \
 # --span_moe \
 # --ffn_moe \
 # ${@:1}
@@ -207,10 +403,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_anc" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_anchor \
+# --exp_idbasenc" \
 # ${@:1}
 
 # CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
@@ -225,10 +418,7 @@ ${@:1}
 # --t_feat_dim ${t_feat_dim} \
 # --bsz ${bsz} \
 # --results_root ${results_root} \
-# --exp_id "cc_moe_anc" \
-# --m_classes "[10, 30, 70, 150]" \
-# --cc_matching \
-# --class_anchor \
+# --exp_idbaseoe_anc" \
 # --moe \
 # ${@:1}
 
@@ -251,10 +441,7 @@ ${@:1}
 #   --t_feat_dim ${t_feat_dim} \
 #   --bsz ${bsz} \
 #   --results_root ${results_root} \
-#   --exp_id la_detr_p${pqn}-${var} \
-#   --m_classes "[10, 30, 70, 150]" \
-#   --tgt_embed \
-#   --cc_matching \
+#   --exp_basedetr_p${pqn}-${var} \
 #   --num_queries 10 \
 #   --pos_query ${pqn} \
 #   ${@:1}

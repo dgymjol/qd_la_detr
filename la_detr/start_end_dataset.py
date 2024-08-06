@@ -75,7 +75,8 @@ class StartEndDataset(Dataset):
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
                  clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0,
-                 dset_domain=None, m_classes = None, crop=False):
+                 dset_domain=None, m_classes = None, crop=False,
+                 fore_min=20, back_min=130, mid_min=30, crop_random=False):
         self.dset_name = dset_name
         self.data_path = data_path
         self.data_ratio = data_ratio
@@ -102,6 +103,11 @@ class StartEndDataset(Dataset):
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
         self.crop = crop
+        self.fore_min = fore_min
+        self.back_min = back_min
+        self.mid_min = mid_min
+        self.crop_random = crop_random
+        
 
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
@@ -148,7 +154,7 @@ class StartEndDataset(Dataset):
             self.m_vals = None
 
     def crop_clip_index(self, start_index, end_index, non_idx=False):
-        candidates = list(range(start_index, end_index + 1, 2))
+        candidates = list(range(start_index + 2, end_index, 2))
         if non_idx:
             candidates.append(-1) # not crop
         return random.sample(candidates, 1)[0]
@@ -163,134 +169,56 @@ class StartEndDataset(Dataset):
             
         if self.crop:
 
-            # long moment database
-            db_range = [100, 50, 10] # moment class borderline
-            reverse_db_range = ([150] + db_range)[:-1][::-1] # moment class borderline
-            moment_db = [[], # longer than 100
-                         [], # longer than 50
-                         []] # longer than 10
-
-            for data in datalist:
-                moments = data['relevant_windows']
-                for start, end in moments:
-                    if (end-start) >= db_range[0]:
-                        moment_db[0].append((data['vid'], [start, end]))
-                    elif (end-start) >= db_range[1]:
-                        moment_db[1].append((data['vid'], [start, end]))
-                    elif (end-start) > db_range[2]:
-                        moment_db[2].append((data['vid'], [start, end]))
-
-            logger.info(f"Moment Database")
-            logger.info(f"verylong_moment_db (>= {db_range[0]}) : {len(moment_db[0])}")
-            logger.info(f"long_moment_db (>= {db_range[1]}) : {len(moment_db[1])}")
-            logger.info(f"middle_moment_db (>= {db_range[2]}) : {len(moment_db[2])}")
-
             org_datalist = deepcopy(datalist)
             datalist = []
 
-            # make new datalist including short-augmented data
             for data in org_datalist:
-                data["crop_timestamp"] = (0, self.max_v_l)
-                data['fore_moment'], data['back_moment'] = None, None
+                data["crop_timestamp"] = [(0, self.max_v_l)]
                 datalist.append(data)
 
                 moments = data['relevant_windows']
 
                 # STEP 1: make crop index list
                 if len(moments) > 1:
-
-                    crop_clip_indices = []
-                    crop_nothing = True
-                    for i in range(len(moments) - 1):
-                        random_indices = self.crop_clip_index(moments[i][1], moments[i+1][0], non_idx=True)
-                        crop_clip_indices.append(random_indices)
-                        if random_indices != -1:
-                            crop_nothing = False
-
-                    fore_crop = self.crop_clip_index(0, moments[0][0])
-                    back_crop = self.crop_clip_index(moments[-1][1], 150)
-                else:
-                    # datalist.append(data) #
                     continue
-
-                # STEP 2-1 : If there is no cropped moment
-                if crop_nothing: 
-                    if fore_crop == 0 and back_crop == 150: # no variance
-                        # datalist.append(data) #
-                        continue
-                    else:
-                        fore_moment, back_moment = None, None
-                        fore_duration, back_duration = 0, 0
-
-                        new_data = deepcopy(data)
-
-                        new_data['duration'] -= fore_crop
-                        new_data['duration'] -= (150 - back_crop)
-
-                        fore_crop_div2 = 0 if fore_crop == 0 else fore_crop // 2
-                        new_data['relevant_clip_ids'] = [ci - fore_crop_div2 for ci in data['relevant_clip_ids']]
-
-                        new_data['relevant_windows'] = [[s - fore_crop, e - fore_crop] for s, e in data['relevant_windows']]
-                        new_data['crop_timestamp'] = (fore_crop // 2, back_crop // 2)
-                        new_data['fore_moment'], new_data['back_moment'] = None, None
-
-                        datalist.append(new_data)
-                        continue
                 
-                # STEP 2-2 : If there is any cropped moment
-                clip_idx = 0
-                window_idx = 0
-                start_crop_idx = fore_crop
-                for end_crop_idx in crop_clip_indices:
-                    if end_crop_idx == -1:
-                        continue
+                s, e = moments[0]
+                end, mlen = data["duration"], e-s
+
+                if (mlen >= self.mid_min) and s >= self.fore_min and end - e >= self.back_min:
                     
-                    fore_moment, back_moment = None, None
-                    fore_duration, back_duration = 0, 0
-                    
-                    for i, bl in enumerate(reverse_db_range):
-                        if (150 - (end_crop_idx - start_crop_idx)) // 2 < bl:
-                            db_idx = len(reverse_db_range) - 1 - i
-                            fore_moment = random.choice(moment_db[db_idx])
-                            fore_duration = fore_moment[1][1] - fore_moment[1][0]
-                            break
-
-                    for i, bl in enumerate(reverse_db_range):
-                        if (150 - (end_crop_idx - start_crop_idx + fore_duration)) < bl:
-                            db_idx = len(reverse_db_range) - 1 - i
-                            back_moment = random.choice(moment_db[db_idx])
-                            back_duration = back_moment[1][1] - back_moment[1][0]
-                            break      
-
-                    new_data = deepcopy(data)
-                    new_data['duration'] =  end_crop_idx - start_crop_idx + fore_duration + back_duration
-
-                    start_crop_idx_div2 = 0 if start_crop_idx == 0 else start_crop_idx // 2
-                    fore_duration_div2 = 0 if fore_duration == 0 else fore_duration // 2
-                    new_data['relevant_clip_ids'], new_data['saliency_scores'] = [], []
-
-                    for ci, ss in zip(data['relevant_clip_ids'][clip_idx :], data['saliency_scores'][clip_idx :]):
-                        if ci * 2 < end_crop_idx:
-                            new_data['relevant_clip_ids'].append(ci - start_crop_idx_div2 + fore_duration_div2)
-                            new_data['saliency_scores'].append(ss)
-                            clip_idx += 1
-                        else:
-                            break
-                    
-                    new_data['relevant_windows'] = []
-                    for ws, we in data['relevant_windows'][window_idx :]:
-                        if we <= end_crop_idx:
-                            new_data['relevant_windows'].append([ws - start_crop_idx + fore_duration, we - start_crop_idx + fore_duration])
-                            window_idx += 1
-                        else:
-                            break
+                    if self.crop_random:
+                        f = self.crop_clip_index(0, s)
+                        b = self.crop_clip_index(e, end)
+                        m = s + ((mlen // 2) // 2) * 2
+                        m1 = self.crop_clip_index(s, m)
+                        m2 = self.crop_clip_index(m, e)
+                    else:
+                        f, b = s // 2, e + ((end - e) // 2) // 2 * 2
+                        m1 = s + ((mlen // 2) // 3) * 2
+                        m2 = e - ((mlen // 2) // 3) * 2
                         
-                    new_data['crop_timestamp'] = (start_crop_idx // 2, end_crop_idx // 2)
-                    new_data['fore_moment'] = None if not fore_moment else [fore_moment[0], (fore_moment[1][0] // 2, fore_moment[1][1] // 2)]
-                    new_data['back_moment'] = None if not back_moment else [back_moment[0], (back_moment[1][0] // 2, back_moment[1][1] // 2)]
-                    datalist.append(new_data)
+                    new_data = deepcopy(data)
+                    new_data['relevant_clip_ids'] = []
+                    new_data['relevant_windows'] = []
+                    for start_idx, s_crop_idx, e_crop_idx in [(s-f, m2, e), 
+                                                                (s - f + e - m2 + end - b, m1, m2), 
+                                                                (s - f + e - m2 + end - b + m2 - m1 + f, s, m1)]:
+                        
+                        start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
+                        s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
+                        e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
+                        
+                        for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
+                            new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
 
-                    start_crop_idx = end_crop_idx
+                        new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
+
+                    new_data['crop_timestamp'] = [(f // 2, s // 2), (m2 // 2, e // 2), (b // 2, end // 2), 
+                                                  (m1 // 2, m2 // 2), (0, f // 2), (s // 2, m1 // 2), (e // 2, b // 2)]
+                    datalist.append(new_data)
+                    
+                    assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
 
             logger.info(f"Oracle Crop : {len(org_datalist)} -> {len(datalist)}")
         return datalist
@@ -310,7 +238,7 @@ class StartEndDataset(Dataset):
             
         if self.use_video:
             if self.crop:
-                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"], meta["fore_moment"], meta["back_moment"])  # (Lv, Dv)
+                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Dv)
             else:
                 model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
@@ -368,7 +296,8 @@ class StartEndDataset(Dataset):
                                 break
                     model_inputs["moment_class"] = torch.tensor(moment_class)
                     if len(model_inputs["moment_class"]) != len(lengths):
-                        print('dd')
+                        # print('dd')
+                        pass
 
         return dict(meta=meta, model_inputs=model_inputs)
 
@@ -590,36 +519,6 @@ class StartEndDataset(Dataset):
                 q_feat = self.random_drop_rows(q_feat)
         return torch.from_numpy(q_feat)  # (D, ) or (Lq, D)
 
-    def _get_query_feat_by_qid(self, qid):
-        if self.dset_name == 'tvsum':
-            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid))) # 'token', 'text'
-            return torch.from_numpy(q_feat['token'])
-        # youtube-hl
-        elif self.dset_name == 'youtube_uni':
-            q_feat = np.load(join(self.q_feat_dir, "{}.npz".format(qid)))
-            return torch.from_numpy(q_feat['last_hidden_state'])
-        
-        elif self.dset_name in ['tacos', 'nlq']:
-            q_feat_path = join(self.q_feat_dir, f"{qid}.npz")
-            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
-            if self.q_feat_type == "last_hidden_state":
-                q_feat = q_feat[:self.max_q_l]
-            if self.normalize_t:
-                q_feat = l2_normalize_np_array(q_feat)
-            if self.txt_drop_ratio > 0:
-                q_feat = self.random_drop_rows(q_feat)
-        else:
-            # QVhighlight dataset
-            q_feat_path = join(self.q_feat_dir, f"qid{qid}.npz")
-            q_feat = np.load(q_feat_path)[self.q_feat_type].astype(np.float32)
-            if self.q_feat_type == "last_hidden_state":
-                q_feat = q_feat[:self.max_q_l]
-            if self.normalize_t:
-                q_feat = l2_normalize_np_array(q_feat)
-            if self.txt_drop_ratio > 0:
-                q_feat = self.random_drop_rows(q_feat)
-        return torch.from_numpy(q_feat)  # (D, ) or (Lq, D)
-    
     def random_drop_rows(self, embeddings):
         """randomly mask num_drop rows in embeddings to be zero.
         Args:
@@ -690,18 +589,15 @@ class StartEndDataset(Dataset):
             v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
 
-
-    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp, fore_moment, back_moment):
-        s, e = crop_timestamp
-
+    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp):
         if self.dset_name == 'tvsum':
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
                 _feat_path = join(_feat_dir, f"{vid}_rgb.npy")
-                _feat_rgb = np.load(_feat_path)[s:e].astype(np.float32)
+                _feat_rgb = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
 
                 _feat_path = join(_feat_dir, f"{vid}_opt.npy")
-                _feat_opt = np.load(_feat_path)[s:e].astype(np.float32)
+                _feat_opt = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
                 
                 _feat = np.concatenate([_feat_rgb, _feat_opt], axis=-1)
                 # _feat = _feat_rgb
@@ -719,10 +615,10 @@ class StartEndDataset(Dataset):
                 # Only single npz files per directory
                 try:
                     _feat_path = join(_feat_dir, f"{vid}.npz")
-                    _feat = np.load(_feat_path)["features"][s:e].astype(np.float32)
+                    _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
                 except:
                     _feat_path = join(_feat_dir, f"{vid}.npy")
-                    _feat = np.load(_feat_path)[s:e].astype(np.float32)
+                    _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
                 
                 # _feat = _feat_rgb
                 if self.normalize_v:
@@ -736,64 +632,29 @@ class StartEndDataset(Dataset):
         else:
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
-                feat_num = 1
-                try:      
-                    feats = []
-                    if fore_moment:
-                        fore_vid, (fore_s, fore_e) = fore_moment
-                        fore_feat_path = join(_feat_dir, f"{fore_vid}.npz")
-                        fore_feat = np.load(fore_feat_path)["features"][fore_s:fore_e].astype(np.float32)
-                        feats.append(fore_feat)
-                        feat_num += 1
-
-                    mid_feat_path = join(_feat_dir, f"{vid}.npz")
-                    mid_feat = np.load(mid_feat_path)["features"][s:e].astype(np.float32)
-                    feats.append(mid_feat)
-
-                    if back_moment:
-                        back_vid, (back_s, back_e) = back_moment
-                        back_feat_path = join(_feat_dir, f"{back_vid}.npz")
-                        back_feat = np.load(back_feat_path)["features"][back_s:back_e].astype(np.float32)
-                        feats.append(back_feat)
-                        feat_num += 1
+                try:
+                    _feat_path = join(_feat_dir, f"{vid}.npz")
+                    _feat = np.load(_feat_path)["features"][:self.max_v_l].astype(np.float32)
                 except:
-                    feats = []
-                    if fore_moment:
-                        fore_vid, (fore_s, fore_e) = fore_moment
-                        fore_feat_path = join(_feat_dir, f"{fore_vid}.npy")
-                        fore_feat = np.load(fore_feat_path)[fore_s:fore_e].astype(np.float32)
-                        feats.append(fore_feat)
-                        feat_num += 1
-
-                    mid_feat_path = join(_feat_dir, f"{vid}.npy")
-                    mid_feat = np.load(mid_feat_path)[s:e].astype(np.float32)
-                    feats.append(mid_feat)
-
-                    if back_moment:
-                        back_vid, (back_s, back_e) = back_moment
-                        back_feat_path = join(_feat_dir, f"{back_vid}.npy")
-                        back_feat = np.load(back_feat_path)[back_s:back_e].astype(np.float32)
-                        feats.append(back_feat)
-                        feat_num += 1
-
-
-                # if self.normalize_v:
-                #     _feat = l2_normalize_np_array(_feat)
-                v_feat_list.append(feats)
-            # some features are slightly longer than the others
-            
-            for i in range(feat_num):
-                min_len = min([len(e[i]) for e in v_feat_list])
-                for j in range(len(v_feat_list)):
-                    v_feat_list[j][i] = v_feat_list[j][i][:min_len]
-
-            for j in range(len(v_feat_list)):
-                _feat =  np.concatenate(v_feat_list[j], axis=0)
+                    _feat_path = join(_feat_dir, f"{vid}.npy")
+                    _feat = np.load(_feat_path)[:self.max_v_l].astype(np.float32)
+                    
+                # relocate clips
+                _feats = []
+                for s, e in crop_timestamp:
+                    _feats.append(_feat[s:e].astype(np.float32))
+                _feats = np.concatenate(_feats, axis=0)
+                
+                
                 if self.normalize_v:
-                    v_feat_list[j] = l2_normalize_np_array(_feat)
-
+                    _feat = l2_normalize_np_array(_feats)
+                v_feat_list.append(_feats)
+            # some features are slightly longer than the others
+            min_len = min([len(e) for e in v_feat_list])
+            v_feat_list = [e[:min_len] for e in v_feat_list]
             v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
+
 
 
 def start_end_collate(batch):

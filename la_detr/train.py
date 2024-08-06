@@ -363,6 +363,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             crop=opt.crop,
+            fore_min=opt.fore_min,
+            back_min=opt.back_min,
+            mid_min=opt.mid_min,
+            crop_random=opt.crop_random
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset(**dataset_config)
@@ -387,6 +391,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             crop=opt.crop,
+            fore_min=opt.fore_min,
+            back_min=opt.back_min,
+            mid_min=opt.mid_min,
+            crop_random=opt.crop_random
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset_audio(**dataset_config)
