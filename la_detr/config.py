@@ -180,6 +180,9 @@ class BaseOptions(object):
         parser.add_argument("--back_min", type=int, default=10)
         parser.add_argument("--mid_min", type=int, default=10)
         parser.add_argument('--crop_random', action='store_true')
+        parser.add_argument('--merge', action='store_true')
+        parser.add_argument('--crop_all', action='store_true')
+        
 
 
         self.parser = parser
