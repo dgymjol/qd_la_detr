@@ -69,7 +69,7 @@ def compute_mr_ap(submission, ground_truth, iou_thds=np.linspace(0.5, 0.95, 10),
     return iou_thd2ap
 
 
-def compute_mr_r1(submission, ground_truth, iou_thds=np.linspace(0.3, 0.95, 14)):
+def compute_mr_r1(submission, ground_truth, iou_thds=np.linspace(0.5, 0.95, 10)):
     """If a predicted segment has IoU >= iou_thd with one of the 1st GT segment, we define it positive"""
     iou_thds = [float(f"{e:.2f}") for e in iou_thds]
     pred_qid2window = {d["qid"]: d["pred_relevant_windows"][0][:2] for d in submission}  # :2 rm scores
@@ -135,11 +135,11 @@ def get_data_by_range(submission, ground_truth, len_range):
 
 
 def eval_moment_retrieval(submission, ground_truth, verbose=True):
-    length_ranges = [[0, 10], [10, 30], [30, 70], [70, 150], [0, 150], ]  # qvhighlight
+    length_ranges = [[0, 10], [10, 30], [30, 150], [0, 150], ]  # qvhighlight
     # length_ranges = [[0, 4], [4, 15], [15, 26], [26, 150], [0, 150], ]  # charades-STA
     # length_ranges = [[0, 7], [7, 14], [14, 40], [40, 10000], [0, 10000], ]  # TACoS
 
-    range_names = ["short", "middle", "long", "very long", "full"]
+    range_names = ["short", "middle", "long", "full"]
 
     ret_metrics = {}
     for l_range, name in zip(length_ranges, range_names):
@@ -158,7 +158,8 @@ def eval_moment_retrieval(submission, ground_truth, verbose=True):
         else:
             iou_thd2average_precision = compute_mr_ap(_submission, _ground_truth, num_workers=8, chunksize=50)
             iou_thd2recall_at_one, miou_at_one = compute_mr_r1(_submission, _ground_truth)
-            ret_metrics[name] = {"MR-mIoU": miou_at_one,
+            ret_metrics[name] = {
+                                # "MR-mIoU": miou_at_one,
                                  "MR-mAP": iou_thd2average_precision,
                                  "MR-R1": iou_thd2recall_at_one}
 
@@ -316,8 +317,8 @@ def eval_submission(submission, ground_truth, verbose=True, match_number=True):
             "MR-short-mAP": moment_ret_scores["short"]["MR-mAP"]["average"],
             "MR-middle-mAP": moment_ret_scores["middle"]["MR-mAP"]["average"],
             "MR-long-mAP": moment_ret_scores["long"]["MR-mAP"]["average"],
-            "MR-full-mIoU": moment_ret_scores["full"]["MR-mIoU"],
-            "MR-full-R1@0.3": moment_ret_scores["full"]["MR-R1"]["0.3"],
+            # "MR-full-mIoU": moment_ret_scores["full"]["MR-mIoU"],
+            # "MR-full-R1@0.3": moment_ret_scores["full"]["MR-R1"]["0.3"],
             "MR-full-R1@0.5": moment_ret_scores["full"]["MR-R1"]["0.5"],
             "MR-full-R1@0.7": moment_ret_scores["full"]["MR-R1"]["0.7"],
         }
