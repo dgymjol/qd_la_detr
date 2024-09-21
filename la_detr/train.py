@@ -363,12 +363,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             crop=opt.crop,
-            fore_min=opt.fore_min,
-            back_min=opt.back_min,
-            mid_min=opt.mid_min,
-            crop_random=opt.crop_random,
             merge=opt.merge,
-            crop_all=opt.crop_all,
+            thres_crop=opt.thres_crop,
+            thres_merge=opt.thres_merge,
+            loss_m_classes=opt.loss_m_classes,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset(**dataset_config)
@@ -393,12 +391,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             crop=opt.crop,
-            fore_min=opt.fore_min,
-            back_min=opt.back_min,
-            mid_min=opt.mid_min,
-            crop_random=opt.crop_random,
             merge=opt.merge,
-            crop_all=opt.crop_all,
+            thres_crop=opt.thres_crop,
+            thres_merge=opt.thres_merge,
+            loss_m_classes=opt.loss_m_classes,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset_audio(**dataset_config)
@@ -411,7 +407,6 @@ def start_training():
         dataset_config["q_feat_dir"] = opt.t_feat_dir.replace("sub_features", "text_features")  # for pretraining
         dataset_config["crop"] = False
         dataset_config["merge"] = False
-        dataset_config["crop_all"] = False
         
         # dataset_config["load_labels"] = False  # uncomment to calculate eval loss
         if opt.a_feat_dir is None:

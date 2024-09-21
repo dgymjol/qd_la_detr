@@ -12,6 +12,8 @@ from torchtext import vocab
 import torch.nn as nn
 from copy import deepcopy
 
+from qd_aug.utils.length_aug import *
+
 logger = logging.getLogger(__name__)
 
 TVSUM_SPLITS = {
@@ -75,8 +77,9 @@ class StartEndDataset(Dataset):
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
                  clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0,
-                 dset_domain=None, m_classes = None, crop=False,
-                 fore_min=20, back_min=130, mid_min=30, crop_random=False, merge=False, crop_all=False):
+                 dset_domain=None, m_classes=None, 
+                 crop=False, merge=False, thres_crop=10, thres_merge=10,
+                 loss_m_classes=None):
         self.dset_name = dset_name
         self.data_path = data_path
         self.data_ratio = data_ratio
@@ -103,12 +106,9 @@ class StartEndDataset(Dataset):
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
         self.crop = crop
-        self.fore_min = fore_min
-        self.back_min = back_min
-        self.mid_min = mid_min
-        self.crop_random = crop_random
         self.merge = merge
-        self.crop_all = crop_all
+        self.thres_crop = thres_crop
+        self.thres_merge = thres_merge
 
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
@@ -150,20 +150,16 @@ class StartEndDataset(Dataset):
             self.embedding = nn.Embedding.from_pretrained(self.vocab.vectors)
         
         if m_classes is not None:
-            self.m_vals = [int(v) for v in m_classes[1:-1].split(',')]
+            self.m_vals = [float(v) for v in m_classes[1:-1].split(',')]
         else:
             self.m_vals = None
 
-    def crop_clip_index(self, start_index, end_index, non_idx=False, num_crop=1):
-        candidates = list(range(start_index + 2, end_index, 2))
-        if non_idx:
-            candidates.append(-1) # not crop
+        if loss_m_classes is not None:
+            self.loss_m_vals = [float(v) for v in loss_m_classes[1:-1].split(',')]
+        else:
+            self.loss_m_vals = None
+
             
-        if num_crop > 1:
-            return sorted(random.sample(candidates, num_crop))
-        else: 
-            return random.sample(candidates, num_crop)
-        
     def load_data(self):
         datalist = load_jsonl(self.data_path)
         if self.data_ratio != 1:
@@ -171,198 +167,104 @@ class StartEndDataset(Dataset):
             datalist = datalist[:n_examples]
             logger.info("Using {}% of the data: {} examples"
                         .format(self.data_ratio * 100, n_examples))
+
+        if not self.crop and not self.merge:
+            return datalist
+
+        new_datalist = []
+
+        for data in datalist:
+
+            new_datalist.append(deepcopy(data))
             
-        if self.crop:
+            if 'vgg' in self.dset_name:
+                clip_len = int(data['duration'] / ctx_l)
+            else: 
+                clip_len = int(self.clip_len)
 
-            org_datalist = deepcopy(datalist)
-            datalist = []
+            ctx_l = int(data['duration'] // clip_len) if data['duration'] % clip_len == 0 else int(data['duration'] // clip_len) + 1
+            # ctx_l = min(round(data['duration'] // clip_len), self.max_v_l)
 
-            for data in org_datalist:
-                data["crop_timestamp"] = [(0, self.max_v_l)]
-                datalist.append(data)
+            ###############################################
+            # moment와 non-moment 구하기
+            ###############################################
 
+            if 'relevant_clip_ids' in data: # QVHighlights
+
+                all_clips = np.zeros(ctx_l)
+                all_clips[data['relevant_clip_ids']] = 1
+
+                moments = find_ones_groups(all_clips, clip_len)
+                assert moments == data['relevant_windows']
+
+                non_moments = find_zeros_groups(all_clips, clip_len)
+
+            else: # Charades, TACoS (single moment)
                 moments = data['relevant_windows']
+                non_moments = []
+                if moments[0][0] != 0:
+                    non_moments.append([0, moments[0][0]])
+                if moments[0][1] != data['duration']:
+                    non_moments.append([moments[0][1], data['duration']])    
+                non_moments[-1][1] = ctx_l * clip_len   
 
-                # STEP 1: make crop index list
-                if len(moments) == 1:
-                    s, e = moments[0]
-                    end, mlen = data["duration"], e-s
+            # 만약 non-moment가 없다면 이 data는 pass
+            if not non_moments:
+                continue 
+            
+            # crop augmentation
+            if self.crop:
+                new_crop_data = crop(data, moments=moments, non_moments=non_moments, thres_crop=self.thres_crop, ctx_l=ctx_l, clip_len=clip_len)
+                if new_crop_data:
+                    new_datalist.append(new_crop_data)
 
-                    if (mlen >= self.mid_min):
-                        if s >= self.fore_min and end - e >= self.back_min:
-                        
-                            if self.crop_random:
-                                f = self.crop_clip_index(0, s)[0]
-                                b = self.crop_clip_index(e, end)[0]
-                                m_ = s + ((mlen // 2) // 2) * 2
-                                m1 = self.crop_clip_index(s, m_)[0]
-                                m2 = self.crop_clip_index(m_, e)[0]
-                            else:
-                                f, b = s // 2, e + ((end - e) // 2) // 2 * 2
-                                m1 = s + ((mlen // 2) // 3) * 2
-                                m2 = e - ((mlen // 2) // 3) * 2
-                                
-                            new_data = deepcopy(data)
-                            new_data['relevant_clip_ids'] = []
-                            new_data['relevant_windows'] = []
-                            for start_idx, s_crop_idx, e_crop_idx in [(s-f, m2, e), 
-                                                                        (s - f + e - m2 + end - b, m1, m2), 
-                                                                        (s - f + e - m2 + end - b + m2 - m1 + f, s, m1)]:
-                                
-                                start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                
-                                for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                    new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
+            # merge augmentation for multi-moments dataset
+            if self.merge:
+                if self.dset_name == 'hl': 
+                    new_merge_data = merge_multi_moments(data, moments=moments, non_moments=non_moments, thres_merge=self.thres_merge, ctx_l=ctx_l, clip_len=clip_len)
 
-                                new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
+                    if new_merge_data:
+                        new_datalist.append(new_merge_data)
+                    else:
+                        if len(data['relevant_windows']) == 1:
+                            s, e = data['relevant_windows'][0]
+                            rs = int(s // clip_len) if s % clip_len == 0 else int(s // clip_len) + 1
+                            re = int(e // clip_len)
+                            rs, re = rs * clip_len, re * clip_len
 
-                            new_data['crop_timestamp'] = [(f // 2, s // 2), (m2 // 2, e // 2), (b // 2, end // 2), 
-                                                        (m1 // 2, m2 // 2), (0, f // 2), (s // 2, m1 // 2), (e // 2, b // 2)]
-                            datalist.append(new_data)
-                            
-                            assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
+                            moments = [[rs, re]]
+                            non_moments = []
+                            if rs - clip_len > 0:
+                                non_moments.append([0, rs - clip_len])
+                            if re + clip_len < ctx_l * clip_len:
+                                non_moments.append([re + clip_len, ctx_l * clip_len ])    
 
-                        if self.crop_all:
-                            if end - e >= self.fore_min + self.back_min:
-                            
-                                if self.crop_random:
-                                    f, m, b = self.crop_clip_index(e, end, num_crop=3)
-                                    m_ = s + ((mlen // 2) // 2) * 2
-                                    m1 = self.crop_clip_index(s, m_)[0]
-                                    m2 = self.crop_clip_index(m_, e)[0]
-                                else:
-                                    m = e + ((end - e) // 2) // 2 * 2
-                                    f = e + ((m - e) // 2) // 2 * 2
-                                    b = m + ((end - m) // 2) // 2 * 2
-                                    m1 = s + ((mlen // 2) // 3) * 2
-                                    m2 = e - ((mlen // 2) // 3) * 2
-                                    
-                                new_data = deepcopy(data)
-                                new_data['relevant_clip_ids'] = []
-                                new_data['relevant_windows'] = []
-                                for start_idx, s_crop_idx, e_crop_idx in [(s + m - f, m2, e), 
-                                                                            (s + m - f + e - m2 + end - b, m1, m2), 
-                                                                            (s + m - f + e - m2 + end - b + m2 - m1 + f - e, s, m1)]:
-                                    
-                                    start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                    s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                    e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                    
-                                    for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                        new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
+                            new_merge_data = merge_single_moment(data, moments=moments, non_moments=non_moments, thres_merge=self.thres_merge, ctx_l=ctx_l, clip_len=clip_len)
+                            if new_merge_data:
+                                new_datalist.append(new_merge_data) 
 
-                                    new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-
-                                s_div2 = 0 if s == 0 else s // 2
-                                new_data['crop_timestamp'] = [(0, s_div2), (f // 2, m // 2), (m2 // 2, e // 2), (b // 2, end // 2), 
-                                                            (m1 // 2, m2 // 2), (e // 2, f // 2), (s_div2, m1 // 2), (m // 2, b // 2)]
-                                
-                                datalist.append(new_data)
-                                
-                                assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                                
-                                
-                            if s >= self.fore_min + self.back_min:
-                            
-                                if self.crop_random:
-                                    f, m, b = self.crop_clip_index(0, s, num_crop=3)
-                                    m_ = s + ((mlen // 2) // 2) * 2
-                                    m1 = self.crop_clip_index(s, m_)[0]
-                                    m2 = self.crop_clip_index(m_, e)[0]
-                                else:
-                                    m = (s // 2) // 2 * 2
-                                    f = (m // 2) // 2 * 2
-                                    b = m + ((s - m) // 2) // 2 * 2
-                                    m1 = s + ((mlen // 2) // 3) * 2
-                                    m2 = e - ((mlen // 2) // 3) * 2
-                                    
-                                new_data = deepcopy(data)
-                                new_data['relevant_clip_ids'] = []
-                                new_data['relevant_windows'] = []
-                                for start_idx, s_crop_idx, e_crop_idx in [(m - f, m2, e), 
-                                                                            (m - f + e - m2 + s - b, m1, m2), 
-                                                                            (m - f + e - m2 + s - b + m2 - m1 + f, s, m1)]:
-                                    
-                                    start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                                    s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                                    e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                                    
-                                    for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                                        new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
-
-                                    new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-
-                                new_data['crop_timestamp'] = [(f // 2, m // 2), (m2 // 2, e // 2), (b // 2, s // 2), 
-                                                            (m1 // 2, m2 // 2), (0, f // 2), (s // 2, m1 // 2), (m // 2, b // 2)]
-                                if e != end:
-                                    new_data['crop_timestamp'].append((e // 2, end // 2))
-                                
-                                datalist.append(new_data)
-                                
-                                assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                            
                 else:
-                    if not self.merge:
-                        continue
-                    
-                    s, e = moments[0][0], moments[-1][1]
-                    end, mlen = data["duration"], e-s
-                    
-                    intervals = []
-                    if s != 0:
-                        intervals.append((0, s))
-                    for i in range(len(moments) - 1):
-                        intervals.append((moments[i][1], moments[i+1][0]))
-                    if e != end:
-                        intervals.append((e, end))
-                        
-                    random.shuffle(intervals)
-                    random.shuffle(moments)
-                    f_idx = random.sample(range(len(intervals)), 1)[0]
-                    
-                    f_intervals, b_interbals = intervals[:f_idx], intervals[f_idx:]
+                    s, e = data['relevant_windows'][0]
+                    rs = int(s // clip_len) if s % clip_len == 0 else int(s // clip_len) + 1
+                    re = int(e // clip_len)
+                    rs, re = rs * clip_len, re * clip_len
 
-                    new_data = deepcopy(data)
-                    new_data['relevant_clip_ids'] = []
-                    new_data['relevant_windows'] = []
-                    
-                    init_idx = 0
-                    if f_intervals:
-                        for s_i, e_i in f_intervals:
-                            init_idx += (e_i - s_i)
-                            
-                    start_idx = init_idx
-                        
-                    for s_crop_idx, e_crop_idx in moments:
-                        start_idx_div2 = 0 if start_idx == 0 else start_idx // 2
-                        s_crop_idx_div2 = 0 if s_crop_idx == 0 else s_crop_idx // 2
-                        e_crop_idx_div2 = 0 if e_crop_idx == 0 else e_crop_idx // 2
-                        
-                        for ci in range(e_crop_idx_div2 - s_crop_idx_div2):
-                            new_data['relevant_clip_ids'].append(start_idx_div2 + ci)
+                    moments = [[rs, re]]
+                    non_moments = []
+                    if rs - clip_len > 0:
+                        non_moments.append([0, rs - clip_len])
+                    if re + clip_len < ctx_l * clip_len:
+                        non_moments.append([re + clip_len, ctx_l * clip_len ])    
 
-                        start_idx += (e_crop_idx - s_crop_idx)
-                        # new_data['relevant_windows'].append([start_idx, start_idx + (e_crop_idx - s_crop_idx)])
-                        
-                    new_data['relevant_windows'] = [[init_idx, start_idx]]
-                        
-                    new_data['crop_timestamp'] = []
-                    for itv in [f_intervals, moments, b_interbals]:
-                        for s_i, e_i in itv:
-                            if s_i != 0:
-                                new_data['crop_timestamp'].append((s_i // 2, e_i // 2))
-                            else:
-                                new_data['crop_timestamp'].append((0, e_i // 2))
-                                              
-                    datalist.append(new_data)
-                    
-                    assert len(new_data['saliency_scores']) == len(new_data['relevant_clip_ids'])
-                 
-                        
-            logger.info(f"Oracle Crop : {len(org_datalist)} -> {len(datalist)}")
-        return datalist
+                    new_merge_data = merge_single_moment(data, moments=moments, non_moments=non_moments, thres_merge=self.thres_merge, ctx_l=ctx_l, clip_len=clip_len)
+                    if new_merge_data:
+                        new_datalist.append(new_merge_data)
+
+        # save_jsonl(new_datalist, f'charades_crop.jsonl')
+        logger.info(f"Length Augmentation : {len(datalist)} -> {len(new_datalist)}")
+
+        return new_datalist
+
 
     def __len__(self):
         return len(self.data)
@@ -378,8 +280,11 @@ class StartEndDataset(Dataset):
             model_inputs["query_feat"] = self._get_query_feat_by_qid(meta["qid"])  # (Dq, ) or (Lq, Dq)
             
         if self.use_video:
-            if self.crop:
-                model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["crop_timestamp"])  # (Lv, Dv)
+            if self.crop or self.merge:
+                if 'org_clip_ids_order' in meta.keys():
+                    model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Dv)
+                else:
+                    model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             else:
                 model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
@@ -427,7 +332,7 @@ class StartEndDataset(Dataset):
                     model_inputs["saliency_pos_labels"], model_inputs["saliency_neg_labels"], model_inputs[
                         "saliency_all_labels"] = \
                         self.get_saliency_labels_sub_as_query(meta["relevant_windows"][0], meta["duration"], ctx_l)  # only one gt
-
+                
                 moment_class = []
                 if self.m_vals is not None:
                     for l in lengths:
@@ -436,9 +341,17 @@ class StartEndDataset(Dataset):
                                 moment_class.append(m_cls)
                                 break
                     model_inputs["moment_class"] = torch.tensor(moment_class)
-                    if len(model_inputs["moment_class"]) != len(lengths):
-                        # print('dd')
-                        pass
+                    assert len(model_inputs["moment_class"]) == len(lengths)
+
+                loss_moment_class = []
+                if self.loss_m_vals is not None:
+                    for l in lengths:
+                        for m_cls, m_val in enumerate(self.loss_m_vals):
+                            if l <= m_val:
+                                loss_moment_class.append(m_cls)
+                                break
+                    model_inputs["loss_moment_class"] = torch.tensor(loss_moment_class)
+                    assert len(model_inputs["loss_moment_class"]) == len(lengths)
 
         return dict(meta=meta, model_inputs=model_inputs)
 
@@ -730,7 +643,7 @@ class StartEndDataset(Dataset):
             v_feat = np.concatenate(v_feat_list, axis=1)
         return torch.from_numpy(v_feat)  # (Lv, D)
 
-    def _get_video_crop_feat_by_vid(self, vid, crop_timestamp):
+    def _get_video_crop_feat_by_vid(self, vid, org_clip_ids_order):
         if self.dset_name == 'tvsum':
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
@@ -782,7 +695,7 @@ class StartEndDataset(Dataset):
                     
                 # relocate clips
                 _feats = []
-                for s, e in crop_timestamp:
+                for s, e in org_clip_ids_order:
                     _feats.append(_feat[s:e].astype(np.float32))
                 _feats = np.concatenate(_feats, axis=0)
                 
@@ -824,6 +737,10 @@ def start_end_collate(batch):
             batched_data[k] = [dict(m_cls=e["model_inputs"]["moment_class"]) for e in batch]
             continue
         
+        if k == "loss_moment_class":
+            batched_data[k] = [dict(m_cls=e["model_inputs"]["loss_moment_class"]) for e in batch]
+            continue
+
         batched_data[k] = pad_sequences_1d(
             [e["model_inputs"][k] for e in batch], dtype=torch.float32, fixed_length=None)
     return batch_meta, batched_data
@@ -855,6 +772,12 @@ def prepare_batch_inputs(batched_model_inputs, device, non_blocking=False):
         targets["moment_class"] = [
             dict(m_cls=e["m_cls"].to(device, non_blocking=non_blocking))
             for e in batched_model_inputs["moment_class"]
+        ]
+
+    if "loss_moment_class" in batched_model_inputs:
+        targets["loss_moment_class"] = [
+            dict(m_cls=e["m_cls"].to(device, non_blocking=non_blocking))
+            for e in batched_model_inputs["loss_moment_class"]
         ]
         
     targets = None if len(targets) == 0 else targets
