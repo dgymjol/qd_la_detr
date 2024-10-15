@@ -2,7 +2,7 @@ dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
-results_root=results_base_crop
+results_root=results_base
 exp_id=exp
 
 ######## data paths
@@ -39,42 +39,18 @@ bsz=32
 
 gpunum=1
 
+results_root='result_crop_aug'
 
-
-
-list="2021 2022 2023 2024 2025"
-results_root=results_new_crop_test
-
+list="2025 2024 2023 2022 2021"
 for seed in $list
 do
   echo $seed
 
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---train_path ${train_path} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---exp_id base_crop_all_${seed} \
---seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---crop_all \
-${@:1}
+aug_seed=4
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
---train_path ${train_path} \
 --eval_path ${eval_path} \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
@@ -83,20 +59,19 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id base_crop_merge_${seed} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---merge \
 ${@:1}
+
+aug_seed=5
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
---train_path ${train_path} \
 --eval_path ${eval_path} \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
@@ -105,131 +80,55 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id base_crop_all_merge_${seed} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --seed ${seed} \
---crop \
---fore_min 10 \
---back_min 10 \
---mid_min 10 \
---crop_random \
---merge \
---crop_all \
+${@:1}
+
+aug_seed=6
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
+--seed ${seed} \
+${@:1}
+
+aug_seed=7
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
+--seed ${seed} \
 ${@:1}
 
 done
 
-
-
-# seed=2023
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id base_crop4_${seed} \
-# --seed ${seed} \
-# --crop \
-# --fore_min 10 \
-# --back_min 10 \
-# --mid_min 10 \
-# --crop_random \
-# ${@:1}
-
-# list="2024 2025"
-
-# for seed in $list
-# do
-#   echo $seed
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id base_crop1_${seed} \
-# --seed ${seed} \
-# --crop \
-# --fore_min 10 \
-# --back_min 10 \
-# --mid_min 15 \
-# --crop_random \
-# ${@:1}
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id base_crop2_${seed} \
-# --seed ${seed} \
-# --crop \
-# --fore_min 15 \
-# --back_min 15 \
-# --mid_min 15 \
-# --crop_random \
-# ${@:1}
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id base_crop3_${seed} \
-# --seed ${seed} \
-# --crop \
-# --fore_min 15 \
-# --back_min 15 \
-# --mid_min 10 \
-# --crop_random \
-# ${@:1}
-
-# CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
-# --dset_name ${dset_name} \
-# --ctx_mode ${ctx_mode} \
-# --train_path ${train_path} \
-# --eval_path ${eval_path} \
-# --eval_split_name ${eval_split_name} \
-# --v_feat_dirs ${v_feat_dirs[@]} \
-# --v_feat_dim ${v_feat_dim} \
-# --t_feat_dir ${t_feat_dir} \
-# --t_feat_dim ${t_feat_dim} \
-# --bsz ${bsz} \
-# --results_root ${results_root} \
-# --exp_id base_crop4_${seed} \
-# --seed ${seed} \
-# --crop \
-# --fore_min 10 \
-# --back_min 10 \
-# --mid_min 10 \
-# --crop_random \
-# ${@:1}
-
-# done

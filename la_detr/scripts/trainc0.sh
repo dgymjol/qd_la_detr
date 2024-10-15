@@ -39,19 +39,18 @@ bsz=32
 
 gpunum=0
 
-results_root=result_length_aug_30
+results_root='result_crop_aug'
 
-
-list="2025 2024 2023 2022 2021 2020 2019 2018"
-
+list="2025 2024 2023 2022 2021"
 for seed in $list
 do
   echo $seed
 
+aug_seed=0
+
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
---train_path ${train_path} \
 --eval_path ${eval_path} \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
@@ -60,21 +59,19 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id lad_bothaug_mcls_3_1_${seed} \
---crop \
---merge \
---thres_crop 10 \
---thres_merge 30 \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
 --m_classes "[13.8, 32.0, 55.0, 150]" \
 --tgt_embed \
 --cc_matching \
 --seed ${seed} \
 ${@:1}
 
+aug_seed=1
+
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
---train_path ${train_path} \
 --eval_path ${eval_path} \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
@@ -83,12 +80,51 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---exp_id lad_bothaug_mcls_3_2_${seed} \
---crop \
---merge \
---thres_crop 10 \
---thres_merge 30 \
---m_classes "[9, 24.0, 48.0, 150]" \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
+--seed ${seed} \
+${@:1}
+
+aug_seed=2
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
+--seed ${seed} \
+${@:1}
+
+aug_seed=3
+
+CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
+--dset_name ${dset_name} \
+--ctx_mode ${ctx_mode} \
+--eval_path ${eval_path} \
+--eval_split_name ${eval_split_name} \
+--v_feat_dirs ${v_feat_dirs[@]} \
+--v_feat_dim ${v_feat_dim} \
+--t_feat_dir ${t_feat_dir} \
+--t_feat_dim ${t_feat_dim} \
+--bsz ${bsz} \
+--results_root ${results_root} \
+--train_path data/hl_crop_10_seed_${aug_seed}.jsonl \
+--exp_id augseed_${aug_seed}_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
 --tgt_embed \
 --cc_matching \
 --seed ${seed} \
