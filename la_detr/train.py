@@ -78,6 +78,7 @@ def train_epoch(model, criterion, train_loader, optimizer, opt, epoch_i, tb_writ
         loss_dict["loss_overall"] = float(losses)  # for logging only
         for k, v in loss_dict.items():
             loss_meters[k].update(float(v) * weight_dict[k] if k in weight_dict else float(v))
+            # tb_writer.add_scalar("Train-iter/{}".format(k), float(v), (epoch_i+1*num_training_examples + batch_idx))
 
         timer_dataloading = time.time()
         if opt.debug and batch_idx == 3:
@@ -86,7 +87,7 @@ def train_epoch(model, criterion, train_loader, optimizer, opt, epoch_i, tb_writ
     # print/add logs
     tb_writer.add_scalar("Train/lr", float(optimizer.param_groups[0]["lr"]), epoch_i+1)
     for k, v in loss_meters.items():
-        tb_writer.add_scalar("Train/{}".format(k), v.avg, epoch_i+1)
+        tb_writer.add_scalar("Train-epoch/{}".format(k), v.avg, epoch_i+1)
 
     to_write = opt.train_log_txt_formatter.format(
         time_str=time.strftime("%Y_%m_%d_%H_%M_%S"),

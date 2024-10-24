@@ -37,7 +37,7 @@ fi
 #### training
 bsz=32
 
-gpunum=0
+gpunum=3
 
 results_root='result_loss_'
 
@@ -55,7 +55,10 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --bsz ${bsz} \
 --results_root ${results_root} \
 --train_path ${train_path} \
---exp_id org_seed_${seed} \
+--exp_id lad_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --seed ${seed} \
 --loss_m_classes "[10, 30, 150]" \
 ${@:1}
@@ -74,7 +77,10 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --bsz ${bsz} \
 --results_root ${results_root} \
 --train_path ${train_path} \
---exp_id org_seed_${seed} \
+--exp_id lad_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --seed ${seed} \
 --loss_m_classes "[10, 30, 150]" \
 ${@:1}
@@ -94,26 +100,11 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --bsz ${bsz} \
 --results_root ${results_root} \
 --train_path ${train_path} \
---exp_id org_seed_${seed} \
+--exp_id lad_seed_${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --seed ${seed} \
 --loss_m_classes "[10, 30, 150]" \
 ${@:1}
 
-seed=2021
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---train_path ${train_path} \
---exp_id org_seed_${seed} \
---seed ${seed} \
---loss_m_classes "[10, 30, 150]" \
-${@:1}

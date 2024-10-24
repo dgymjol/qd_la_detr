@@ -1,1 +1,4 @@
-__pycache__
+**/*result*/
+debug
+test
+*.pyc

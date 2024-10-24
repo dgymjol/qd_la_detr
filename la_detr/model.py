@@ -376,14 +376,36 @@ class SetCriterion(nn.Module):
             short_idx = (tgt_cls == 0).nonzero(as_tuple=True)[0]
             medium_idx = (tgt_cls == 1).nonzero(as_tuple=True)[0]
             long_idx = (tgt_cls == 2).nonzero(as_tuple=True)[0]
+            # verlong_idx = (tgt_cls == 3).nonzero(as_tuple=True)[0]
 
-            losses['loss_short_giou'] = loss_giou[short_idx].mean()
-            losses['loss_medium_giou'] = loss_giou[medium_idx].mean()
-            losses['loss_long_giou'] = loss_giou[long_idx].mean()
+            losses['0_num'] = len(short_idx)
+            losses['1_num'] = len(medium_idx)
+            losses['2_num'] = len(long_idx)
+            # losses['3_num'] = len(verlong_idx)
 
-            losses['loss_short_span'] = loss_span[short_idx].mean()
-            losses['loss_medium_span'] = loss_span[medium_idx].mean()
-            losses['loss_long_span'] = loss_span[long_idx].mean()
+            losses['loss_0_giou_sum'] = loss_giou[short_idx].sum()
+            losses['loss_1_giou_sum'] = loss_giou[medium_idx].sum()
+            losses['loss_2_giou_sum'] = loss_giou[long_idx].sum()
+            # losses['loss_3_giou_sum'] = loss_giou[verlong_idx].sum()
+            losses['loss_full_giou_sum'] = loss_giou.sum()
+
+            losses['loss_0_giou_mean'] = loss_giou[short_idx].mean()
+            losses['loss_1_giou_mean'] = loss_giou[medium_idx].mean()
+            losses['loss_2_giou_mean'] = loss_giou[long_idx].mean()
+            # losses['loss_3_giou_mean'] = loss_giou[verlong_idx].mean()
+            losses['loss_full_giou_mean'] = loss_giou.mean()
+
+            losses['loss_0_span_sum'] = loss_span[short_idx].sum()
+            losses['loss_1_span_sum'] = loss_span[medium_idx].sum()
+            losses['loss_2_span_sum'] = loss_span[long_idx].sum()
+            # losses['loss_3_spans_sum'] = loss_span[verlong_idx].sum()
+            losses['loss_full_span_sum'] = loss_span.sum()
+
+            losses['loss_0_span_mean'] = loss_span[short_idx].mean()
+            losses['loss_1_span_mean'] = loss_span[medium_idx].mean()
+            losses['loss_2_span_mean'] = loss_span[long_idx].mean()
+            # losses['loss_3_spans_mean'] = loss_span[verlong_idx].mean()
+            losses['loss_full_span_mean'] = loss_span.mean()
 
         return losses
 
@@ -422,9 +444,43 @@ class SetCriterion(nn.Module):
 
         losses = {'loss_label': loss.mean()}
 
+        if 'loss_moment_class' in targets:
+            target_cls = targets['loss_moment_class']
+            tgt_cls = torch.cat([t['m_cls'][i] for t, (_, i) in zip(target_cls, indices)], dim=0)  # (#spans, 2)
+
+            short_idx = (tgt_cls == 0).nonzero(as_tuple=True)[0]
+            medium_idx = (tgt_cls == 1).nonzero(as_tuple=True)[0]
+            long_idx = (tgt_cls == 2).nonzero(as_tuple=True)[0]
+            # verlong_idx = (tgt_cls == 3).nonzero(as_tuple=True)[0]
+
+            losses['loss_0_fg_label_sum'] = loss[idx][short_idx].sum()
+            losses['loss_1_fg_label_sum'] = loss[idx][medium_idx].sum()
+            losses['loss_2_fg_label_sum'] = loss[idx][long_idx].sum()
+            # losses['loss_3_label_sum'] = loss[verlong_idx].sum()
+            losses['loss_full_fg_label_sum'] = loss[idx].sum()
+            losses['loss_full_all_label_sum'] = loss.sum()
+
+            losses['loss_0_fg_label_mean'] = loss[idx][short_idx].mean()
+            losses['loss_1_fg_label_mean'] = loss[idx][medium_idx].mean()
+            losses['loss_2_fg_label_mean'] = loss[idx][long_idx].mean()
+            # losses['loss_3_label_mean'] = loss[verlong_idx].mean()
+            losses['loss_full_fg_label_mean'] = loss[idx].mean()
+            losses['loss_full_all_label_mean'] = loss.mean()
+
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             losses['class_error'] = 100 - accuracy(src_logits[idx], self.foreground_label)[0]
+
+            if 'loss_moment_class' in targets:
+                if len(short_idx)>0 :
+                    losses['class_0_acc'] = accuracy(src_logits[idx][short_idx], self.foreground_label)[0]
+                if len(medium_idx)>0 :
+                    losses['class_1_acc'] = accuracy(src_logits[idx][medium_idx], self.foreground_label)[0]
+                if len(long_idx)>0 :
+                    losses['class_2_acc'] = accuracy(src_logits[idx][long_idx], self.foreground_label)[0]
+                # losses['class_4_acc'] = accuracy(src_logits[idx][verlong_idx], self.foreground_label)[0] if len(verlong_idx)>0 else -1
+                losses['class_full_acc'] = accuracy(src_logits[idx], self.foreground_label)[0]
+
             if self.m_classes is not None and self.cls_both:
                 losses['aux_class_error'] = 100 - accuracy(aux_src_logits[idx], self.foreground_label)[0]
         return losses
