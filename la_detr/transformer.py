@@ -94,6 +94,7 @@ class Transformer(nn.Module):
                  bbox_embed_diff_each_layer=False,
                  m_classes=None, tgt_embed=False,
                  class_anchor=False, ffn_moe=False,
+                 length_query=None,
                  ):
         super().__init__()
 
@@ -135,6 +136,11 @@ class Transformer(nn.Module):
             self.num_classes = len(m_classes[1:-1].split(','))
             if self.tgt_embed:
                 self.patterns = nn.Embedding(self.num_classes, d_model)
+
+        if length_query is not None:
+            self.len_query_num = [int(lq) for lq in length_query[1:-1].split(',')]
+        else:
+            self.len_query_num = None
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -180,9 +186,14 @@ class Transformer(nn.Module):
 
         if self.m_classes is not None:
             if self.tgt_embed:
-                tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
-                if not self.class_anchor:
-                    refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                if  self.len_query_num is None:
+                    tgt = self.patterns.weight[:, None, None, :].repeat(1, self.num_queries, bs, 1).flatten(0, 1)
+                    if not self.class_anchor:
+                        refpoint_embed = refpoint_embed.repeat(self.num_classes, 1, 1)
+                else:
+                    tgt = torch.cat(
+                        [self.patterns.weight[:, None, None, :][i].repeat(lq, bs, 1) 
+                         for i, lq in enumerate(self.len_query_num)], dim=0)
             else:
                 if self.class_anchor:
                     tgt = torch.zeros(refpoint_embed.shape[0], bs, d).cuda()
@@ -851,6 +862,8 @@ def build_transformer(args):
         num_queries=args.num_queries,
         class_anchor=args.class_anchor,
         ffn_moe=args.ffn_moe,
+        length_query=args.length_query,
+
     )
 
 
