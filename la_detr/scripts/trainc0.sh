@@ -2,7 +2,6 @@ dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
-results_root=results_base
 exp_id=exp
 
 ######## data paths
@@ -37,30 +36,18 @@ fi
 #### training
 bsz=32
 
+results_root=results_twomix
+
+
 gpunum=0
 
-results_root='result_loss_'
+list="2027 2028"
 
-seed=2024
+aug_seed=0
 
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---train_path ${train_path} \
---exp_id org_seed_${seed} \
---seed ${seed} \
---loss_m_classes "[10, 30, 150]" \
-${@:1}
-
-seed=2023
+for seed in $list
+do
+  echo $seed
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
@@ -73,47 +60,14 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---train_path ${train_path} \
---exp_id org_seed_${seed} \
+--train_path data/hl_crop_mix_replace_10_seed_${aug_seed}.jsonl \
+--exp_id lenquery_cropmix_replace_${aug_seed}__seed_${seed} \
 --seed ${seed} \
+--m_classes "[13.8, 32.0, 55.0, 150]" \
+--tgt_embed \
+--cc_matching \
 --loss_m_classes "[10, 30, 150]" \
+--length_query "[17, 13, 9, 5]" \
 ${@:1}
 
-
-seed=2022
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---train_path ${train_path} \
---exp_id org_seed_${seed} \
---seed ${seed} \
---loss_m_classes "[10, 30, 150]" \
-${@:1}
-
-seed=2021
-
-CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
---dset_name ${dset_name} \
---ctx_mode ${ctx_mode} \
---eval_path ${eval_path} \
---eval_split_name ${eval_split_name} \
---v_feat_dirs ${v_feat_dirs[@]} \
---v_feat_dim ${v_feat_dim} \
---t_feat_dir ${t_feat_dir} \
---t_feat_dim ${t_feat_dim} \
---bsz ${bsz} \
---results_root ${results_root} \
---train_path ${train_path} \
---exp_id org_seed_${seed} \
---seed ${seed} \
---loss_m_classes "[10, 30, 150]" \
-${@:1}
+done
