@@ -5,7 +5,6 @@ import numpy as np
 from utils.length_aug import *
 import sys
 
-
 def crop_twomix(data, moments, non_moments, thres_crop, ctx_l, clip_len, db_range, moment_db):
     ###############################################
     # 20 이상인 moment 구하기
@@ -270,108 +269,6 @@ def crop_twomix(data, moments, non_moments, thres_crop, ctx_l, clip_len, db_rang
     return new_data
 
 
-
-def nonGT_replace(data, moments, non_moments, ctx_l, clip_len, db_range, moment_db):
-
-    ###############################################
-    # non_moment_segments replacement
-    ###############################################
-
-    non_moment_segments = []
-
-    for i, (s, e) in enumerate(non_moments):
-        non_moment = dict()
-
-        need_len = (e- s)
-
-        find = False
-        db_range_idx = -1
-        for db_range_ in db_range:
-            if need_len > db_range_:
-                find = True
-                break
-            db_range_idx += 1
-
-        if not find:
-            print(need_len)
-            return None
-        
-        another_moment = random.choice(moment_db[db_range_idx])
-        non_moment['vid'] = another_moment[0]
-
-
-        ass, aee = another_moment[1]
-        if aee - ass < need_len:
-            assert False
-        else:
-            aee = ass + need_len
-
-        if ass == 0:
-            rss = 0
-        else:
-            rss = int(ass // clip_len) if ass % clip_len == 0 else int(ass // clip_len) + 1
-
-        ree = int(aee // clip_len)
-
-
-        non_moment['clip_id'] = [rss, ree]
-        non_moment['len'] = (ree - rss)
-
-        non_moment_segments.append(non_moment)
-
-
-    ###############################################
-    # 새로운 data 만들기
-    ###############################################
-
-    new_data = dict()
-    new_data['qid'] = data['qid']
-    new_data['query'] = data['query']
-    new_data['duration'] = data['duration']
-    new_data['vid'] = data['vid']
-    new_data['relevant_windows'] = data['relevant_windows']
-    new_data['relevant_clip_ids'] = data['relevant_clip_ids']
-
-    if 'saliency_scores' in data:
-        new_data['saliency_scores'] = data['saliency_scores']
-
-
-    new_data['org_clip_ids_order'] = []
-
-    non_moments_idx = 0
-    if non_moments[0][0] == 0:
-        non_moment_segment = non_moment_segments[0]
-        new_data['org_clip_ids_order'].append((non_moment_segment['vid'], non_moment_segment['clip_id']))
-        non_moments_idx += 1
-
-    for i in range(len(moments) - 1):
-
-        # moment segment
-        s, e = moments[i]
-        rs = int(s // clip_len) if s != 0 else 0
-        re = int(e // clip_len) if e % clip_len == 0 else int(e // clip_len) + 1
-        new_data['org_clip_ids_order'].append((data['vid'], [rs, re]))
-
-        # non-moment segment
-        non_moment_segment = non_moment_segments[non_moments_idx]
-        new_data['org_clip_ids_order'].append((non_moment_segment['vid'], non_moment_segment['clip_id']))
-        non_moments_idx += 1
-
-    # moment segment
-    s, e = moments[-1]
-    rs = int(s // clip_len) if s != 0 else 0
-    re = int(e // clip_len) if e % clip_len == 0 else int(e // clip_len) + 1
-    new_data['org_clip_ids_order'].append((data['vid'], [rs, re]))
-
-    if non_moments_idx < len(non_moment_segments):
-        non_moment_segment = non_moment_segments[-1]
-        new_data['org_clip_ids_order'].append((non_moment_segment['vid'], non_moment_segment['clip_id']))
-
-    assert len(new_data['org_clip_ids_order']) == len(moments) + len(non_moments)
-    return new_data
-
-
-
 dset_name = sys.argv[1]
 seed = int(sys.argv[2])
 thres_crop = int(sys.argv[3])
@@ -382,7 +279,7 @@ print(f" seed : {seed}")
 print(f" thres_crop : {thres_crop}")
 
 savefilename = f"data/{dset_name}"
-savefilename += f"_crop_twomix_replace_{thres_crop}"
+savefilename += f"_crop_twomix_{thres_crop}"
 savefilename += f"_seed_{seed}.jsonl"
 
 random.seed(seed)
@@ -465,8 +362,6 @@ print(f"moment db (>= {db_range[8]}) : {len(moment_db[8])}")
 
 new_datalist = []
 
-num_crop_data = 0
-num_replace_data = 0
 for data in datalist:
 
     new_datalist.append(deepcopy(data))
@@ -500,49 +395,12 @@ for data in datalist:
         continue 
     
     # crop augmentation
-    # new_crop_data = crop_twomix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-    # if new_crop_data:
-    #     new_datalist.append(new_crop_data)
-    # else:
-    #     new_replace_data = nonGT_replace(data, moments=moments, non_moments=non_moments, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-    #     if new_replace_data:
-    #         new_datalist.append(new_replace_data)
+    new_crop_data = crop_twomix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
+    if new_crop_data:
+        new_datalist.append(new_crop_data)
 
-
-    if thres_crop < 10:
-        new_crop_data = crop_twomix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-        new_replace_data = nonGT_replace(data, moments=moments, non_moments=non_moments, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-
-        if new_crop_data:
-            if new_replace_data:
-                choice = random.sample(['crop', 'replace'], 1)[0]
-                if choice == 'crop':
-                    new_datalist.append(new_crop_data)
-                    num_crop_data += 1
-                else:
-                    new_datalist.append(new_replace_data)
-                    num_replace_data += 1
-
-            else:
-                new_datalist.append(new_crop_data)
-                num_crop_data += 1
-        else:
-            if new_replace_data:
-                new_datalist.append(new_replace_data)
-                num_replace_data += 1
-    else:
-        new_crop_data = crop_twomix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-        if new_crop_data:
-            new_datalist.append(new_crop_data)
-            num_crop_data += 1
-        else:
-            new_replace_data = nonGT_replace(data, moments=moments, non_moments=non_moments, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-            if new_replace_data:
-                new_datalist.append(new_replace_data)
-                num_replace_data += 1
 
 print(f"Length Augmentation : {len(datalist)} -> {len(new_datalist)}")
-print(f"crop data / replace data : {num_crop_data} / {num_replace_data}")
 print(f"Saved File : {savefilename}")
 
 save_jsonl(new_datalist, savefilename)

@@ -415,6 +415,9 @@ print(f"moment db (>= {db_range[8]}) : {len(moment_db[8])}")
 
 new_datalist = []
 
+num_crop_data = 0
+num_replace_data = 0
+
 for data in datalist:
 
     new_datalist.append(deepcopy(data))
@@ -448,15 +451,40 @@ for data in datalist:
         continue 
     
     # crop augmentation
-    new_crop_data = crop_mix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len)
-    if new_crop_data:
-        new_datalist.append(new_crop_data)
-    else:
+
+    if thres_crop <= 10:
+        new_crop_data = crop_mix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len)
         new_replace_data = nonGT_replace(data, moments=moments, non_moments=non_moments, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
-        if new_replace_data:
-            new_datalist.append(new_replace_data)
+        if new_crop_data:
+            if new_replace_data:
+                choice = random.sample(['crop', 'replace'], 1)[0]
+                if choice == 'crop':
+                    new_datalist.append(new_crop_data)
+                    num_crop_data += 1
+                else:
+                    new_datalist.append(new_replace_data)
+                    num_replace_data += 1
+
+            else:
+                new_datalist.append(new_crop_data)
+                num_crop_data += 1
+        else:
+            if new_replace_data:
+                new_datalist.append(new_replace_data)
+                num_replace_data += 1
+    else:
+        new_crop_data = crop_mix(data, moments=moments, non_moments=non_moments, thres_crop=thres_crop, ctx_l=ctx_l, clip_len=clip_len)
+        if new_crop_data:
+            new_datalist.append(new_crop_data)
+            num_crop_data += 1
+        else:
+            new_replace_data = nonGT_replace(data, moments=moments, non_moments=non_moments, ctx_l=ctx_l, clip_len=clip_len, db_range=db_range, moment_db=moment_db)
+            if new_replace_data:
+                new_datalist.append(new_replace_data)
+                num_replace_data += 1
 
 print(f"Length Augmentation : {len(datalist)} -> {len(new_datalist)}")
+print(f"crop data / replace data : {num_crop_data} / {num_replace_data}")
 print(f"Saved File : {savefilename}")
 
 save_jsonl(new_datalist, savefilename)
