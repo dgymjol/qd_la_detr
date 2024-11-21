@@ -202,7 +202,11 @@ class StartEndDataset(Dataset):
             if 'org_clip_ids_order' in meta.keys():
                 model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Dv)
             else:
-                model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"], meta['aug'])  # (Lv, Dv)
+                if 'aug' in meta:
+                    model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"], meta['aug'])  # (Lv, Dv)
+                else:
+                    model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"], False)  # (Lv, Dv)
+
             ctx_l = len(model_inputs["video_feat"])
         else:
             ctx_l = self.max_v_l
