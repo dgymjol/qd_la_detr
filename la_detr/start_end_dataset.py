@@ -76,7 +76,7 @@ class StartEndDataset(Dataset):
                  q_feat_type="last_hidden_state",
                  max_q_l=32, max_v_l=75, data_ratio=1.0, ctx_mode="video",
                  normalize_v=True, normalize_t=True, load_labels=True,
-                 clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0,
+                 clip_len=2, max_windows=5, span_loss_type="l1", txt_drop_ratio=0, vis_drop_ratio=0,noise_augmentation=False, noise_mean=0, noise_std=0,
                  dset_domain=None, m_classes=None, 
                  loss_m_classes=None):
         self.dset_name = dset_name
@@ -102,8 +102,15 @@ class StartEndDataset(Dataset):
         self.max_windows = max_windows  # maximum number of windows to use as labels
         self.span_loss_type = span_loss_type
         self.txt_drop_ratio = txt_drop_ratio
+        self.vis_drop_ratio = vis_drop_ratio
         if "val" in data_path or "test" in data_path:
             assert txt_drop_ratio == 0
+            assert vis_drop_ratio == 0
+            assert not noise_augmentation
+
+        self.noise_augmentation = noise_augmentation
+        self.noise_mean = noise_mean
+        self.noise_std = noise_std
 
         # checks
         assert q_feat_type in self.Q_FEAT_TYPES
@@ -157,6 +164,18 @@ class StartEndDataset(Dataset):
             
     def load_data(self):
         datalist = load_jsonl(self.data_path)
+
+        if self.vis_drop_ratio > 0 or self.noise_augmentation:
+            new_datalist = []
+            for data in datalist:
+                no_aug_data = deepcopy(data)
+                no_aug_data['aug'] = False
+                new_datalist.append(no_aug_data)
+                aug_data = deepcopy(data)
+                aug_data['aug'] = True
+                new_datalist.append(aug_data)
+            datalist = new_datalist
+
         if self.data_ratio != 1:
             n_examples = int(len(datalist) * self.data_ratio)
             datalist = datalist[:n_examples]
@@ -183,7 +202,7 @@ class StartEndDataset(Dataset):
             if 'org_clip_ids_order' in meta.keys():
                 model_inputs["video_feat"] = self._get_video_crop_feat_by_vid(meta["vid"], meta["org_clip_ids_order"])  # (Lv, Dv)
             else:
-                model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"])  # (Lv, Dv)
+                model_inputs["video_feat"] = self._get_video_feat_by_vid(meta["vid"], meta['aug'])  # (Lv, Dv)
             ctx_l = len(model_inputs["video_feat"])
         else:
             ctx_l = self.max_v_l
@@ -481,14 +500,31 @@ class StartEndDataset(Dataset):
         Args:
             embeddings: np.ndarray (L, D)
         """
-        num_drop_rows = round(len(embeddings) * self.txt_drop_ratio)
+        num_drop_rows = round(len(embeddings) * self.vis_drop_ratio)
         if num_drop_rows > 0:
             row_indices = np.random.choice(
                 len(embeddings), size=num_drop_rows, replace=False)
             embeddings[row_indices] = 0
         return embeddings
 
-    def _get_video_feat_by_vid(self, vid):
+
+    def add_gaussian_noise(self, features):
+        """
+        주어진 특징 배열에 Gaussian 노이즈를 추가합니다.
+        
+        Args:
+            features (np.ndarray): 원본 특징 배열, 예: (75, 256).
+            mean (float): Gaussian 노이즈의 평균. 기본값은 0.0.
+            std (float): Gaussian 노이즈의 표준편차. 기본값은 0.1.
+            
+        Returns:
+            np.ndarray: 노이즈가 추가된 특징 배열.
+        """
+        noise = np.random.normal(loc=self.noise_mean, scale=self.noise_std, size=features.shape)
+        return features + noise
+
+
+    def _get_video_feat_by_vid(self, vid, aug):
         if self.dset_name == 'tvsum':
             v_feat_list = []
             for _feat_dir in self.v_feat_dirs:
@@ -544,6 +580,14 @@ class StartEndDataset(Dataset):
             min_len = min([len(e) for e in v_feat_list])
             v_feat_list = [e[:min_len] for e in v_feat_list]
             v_feat = np.concatenate(v_feat_list, axis=1)
+
+            if aug:
+                if self.vis_drop_ratio > 0:
+                    v_feat = self.random_drop_rows(v_feat)
+        
+                if self.noise_augmentation:
+                    v_feat = self.add_gaussian_noise(v_feat)
+
         return torch.from_numpy(v_feat)  # (Lv, D)
 
     def _get_video_crop_feat_by_vid(self, vid, org_clip_ids_order):

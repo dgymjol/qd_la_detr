@@ -2,6 +2,7 @@ dset_name=hl
 ctx_mode=video_tef
 v_feat_types=slowfast_clip
 t_feat_type=clip 
+results_root=results_crop
 exp_id=exp
 
 ######## data paths
@@ -36,22 +37,27 @@ fi
 #### training
 bsz=32
 
-results_root=results_twomix
-
-
 gpunum=0
 
-list="2027 2028"
+seed=2025
 
-aug_seed=0
 
-for seed in $list
+results_root=results_supple/random_noise
+
+list="-0.05 0.0 0.05"
+
+std=0.01
+
+for mean in $list
 do
-  echo $seed
+
+echo $mean
+echo $std
 
 CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py \
 --dset_name ${dset_name} \
 --ctx_mode ${ctx_mode} \
+--train_path ${train_path} \
 --eval_path ${eval_path} \
 --eval_split_name ${eval_split_name} \
 --v_feat_dirs ${v_feat_dirs[@]} \
@@ -60,14 +66,11 @@ CUDA_VISIBLE_DEVICES=${gpunum} PYTHONPATH=$PYTHONPATH:. python la_detr/train.py 
 --t_feat_dim ${t_feat_dim} \
 --bsz ${bsz} \
 --results_root ${results_root} \
---train_path data/hl_crop_mix_replace_10_seed_${aug_seed}.jsonl \
---exp_id lenquery_cropmix_replace_${aug_seed}__seed_${seed} \
---seed ${seed} \
---m_classes "[13.8, 32.0, 55.0, 150]" \
---tgt_embed \
---cc_matching \
---loss_m_classes "[10, 30, 150]" \
---length_query "[17, 13, 9, 5]" \
+--exp_id org_noise_${mean}_${std} \
+--noise_augmentation \
+--noise_mean ${mean}
+--noise_std ${std}
+--seed ${seed}
 ${@:1}
 
 done

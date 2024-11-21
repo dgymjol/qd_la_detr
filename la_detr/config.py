@@ -110,6 +110,8 @@ class BaseOptions(object):
                             help="Dropout applied in the transformer")
         parser.add_argument("--txt_drop_ratio", default=0, type=float,
                             help="drop txt_drop_ratio tokens from text input. 0.1=10%")
+        parser.add_argument("--vis_drop_ratio", default=0, type=float,
+                            help="drop vis_drop_ratio tokens from text input. 0.1=10%")
         parser.add_argument("--use_txt_pos", action="store_true", help="use position_embedding for text as well.")
         parser.add_argument('--nheads', default=8, type=int,
                             help="Number of attention heads inside the transformer's attentions")
@@ -121,6 +123,13 @@ class BaseOptions(object):
         parser.add_argument('--ffn_moe', action='store_true')
         parser.add_argument('--class_moe', action='store_true')
         parser.add_argument('--span_moe', action='store_true')
+
+
+        parser.add_argument('--noise_augmentation', action='store_true')
+        parser.add_argument("--noise_mean", default=0, type=float)
+        parser.add_argument("--noise_std", default=0, type=float)
+
+
         
         # other model configs
         parser.add_argument("--n_input_proj", type=int, default=2, help="#layers to encoder input")

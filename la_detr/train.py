@@ -364,6 +364,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             loss_m_classes=opt.loss_m_classes,
+            vis_drop_ratio=opt.vis_drop_ratio,
+            noise_augmentation=opt.noise_augmentation,
+            noise_mean=opt.noise_mean,
+            noise_std=opt.noise_std,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset(**dataset_config)
@@ -388,6 +392,10 @@ def start_training():
             dset_domain=opt.dset_domain,
             m_classes=opt.m_classes,
             loss_m_classes=opt.loss_m_classes,
+            vis_drop_ratio=opt.vis_drop_ratio,
+            noise_augmentation=opt.noise_augmentation,
+            noise_mean=opt.noise_mean,
+            noise_std=opt.noise_std,
         )
         dataset_config["data_path"] = opt.train_path
         train_dataset = StartEndDataset_audio(**dataset_config)
@@ -397,6 +405,8 @@ def start_training():
     if opt.eval_path is not None:
         dataset_config["data_path"] = opt.eval_path
         dataset_config["txt_drop_ratio"] = 0
+        dataset_config["vis_drop_ratio"] = 0
+        dataset_config['noise_augmentation'] = False
         dataset_config["q_feat_dir"] = opt.t_feat_dir.replace("sub_features", "text_features")  # for pretraining
         
         # dataset_config["load_labels"] = False  # uncomment to calculate eval loss
